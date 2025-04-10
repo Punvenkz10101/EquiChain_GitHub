@@ -13,7 +13,7 @@ const Index = () => {
   return (
     <div className="flex flex-col items-center">
       {/* Hero Section */}
-      <section className="w-full bg-gradient-to-br from-[#003333] to-[#00CCCC] py-16 md:py-24 text-white">
+      <section className="w-full bg-gradient-to-br from-[#003333] to-[#182020] py-16 md:py-24 text-white">
         <div className="container max-w-6xl mx-auto px-4 text-center">
           <h1 className="text-3xl md:text-5xl font-bold mb-6">
             Secure & Transparent Welfare Benefits Distribution
@@ -24,10 +24,10 @@ const Index = () => {
             complete transparency throughout the process.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <Button asChild size="lg" className="bg-white text-[#003333] hover:bg-gray-100">
+            <Button asChild size="lg" className="bg-white text-[#003333] hover:bg-[#2a9b7f]">
               <Link to="/dashboard">Check Eligibility</Link>
             </Button>
-            <Button asChild size="lg" variant="outline" className="text-white border-white hover:bg-[#003333]/30">
+            <Button asChild size="lg" variant="outline" className="text-[#003333] border-white hover:bg-[#2a9b7f]">
               <Link to="/public-verification">Verify Benefits</Link>
             </Button>
           </div>
@@ -83,15 +83,15 @@ const Index = () => {
             {schemes.slice(0, 3).map((scheme) => {
               const IconComponent = getIconForScheme(scheme.icon);
               return (
-                <div key={scheme.id} className="bg-white p-6 rounded-lg shadow-md">
+                <div key={scheme.id} className="bg-white p-6 rounded-lg shadow-md flex flex-col h-full">
                   <div className="flex items-center mb-4">
                     <div className="p-2 rounded-full bg-[#003333]/10 mr-3">
                       <IconComponent className="h-6 w-6 text-[#00CCCC]" />
                     </div>
                     <h3 className="text-lg font-semibold text-[#003333]">{scheme.title}</h3>
                   </div>
-                  <p className="text-gray-600 mb-4 text-sm">{scheme.description}</p>
-                  <Button asChild className="w-full bg-[#003333] hover:bg-[#00CCCC]">
+                  <p className="text-gray-600 mb-4 text-sm flex-grow">{scheme.description}</p>
+                  <Button asChild className="w-full bg-[#003333] hover:bg-[#00CCCC] mt-auto">
                     <Link to={isAuthenticated ? "/dashboard" : "/login"}>Check Eligibility</Link>
                   </Button>
                 </div>

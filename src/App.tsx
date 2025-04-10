@@ -19,7 +19,19 @@ import Layout from "@/components/Layout";
 import NotFound from "@/pages/NotFound";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
+import {
+  ClerkProvider,
+  RedirectToSignIn,
+  SignIn,
+  SignUp,
+  SignedIn,
+  SignedOut,
+  UserButton
+} from "@clerk/clerk-react";
+
 const queryClient = new QueryClient();
+const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -28,22 +40,22 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Layout />}>
-                <Route index element={<Index />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/verifier-login" element={<VerifierLogin />} />
-                <Route path="/register" element={<Register />} />
-                <Route path="/public-verification" element={<PublicVerification />} />
-                <Route element={<ProtectedRoute />}>
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/verification-process" element={<VerificationProcess />} />
-                  <Route path="/verifier-dashboard" element={<VerifierDashboard />} />
-                </Route>
-                <Route path="*" element={<NotFound />} />
+          <BrowserRouter> 
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Index />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/verifier-login" element={<VerifierLogin />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/public-verification" element={<PublicVerification />} />
+              <Route element={<ProtectedRoute />}>
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/verification-process" element={<VerificationProcess />} />
+                <Route path="/verifier-dashboard" element={<VerifierDashboard />} />
               </Route>
-            </Routes>
+              <Route path="*" element={<NotFound />} />
+            </Route>
+          </Routes>
           </BrowserRouter>
         </TooltipProvider>
       </BlockchainProvider>

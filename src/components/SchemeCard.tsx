@@ -29,15 +29,15 @@ const SchemeCard = ({ title, description, eligibility, icon, schemeId }: SchemeC
   };
 
   return (
-    <Card className="transition-all hover:shadow-lg">
+    <Card className="transition-all hover:shadow-lg flex flex-col h-full">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-bold">{title}</CardTitle>
           <div className="rounded-full p-2 bg-[#003333]/10">{getIcon()}</div>
         </div>
-        <CardDescription className="text-sm text-[#E0E0E0]">{description}</CardDescription>
+        <CardDescription className="text-sm text-[#232020]">{description}</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-grow">
         <h4 className="text-sm font-semibold mb-2">Eligibility Criteria:</h4>
         <ul className="text-sm list-disc pl-5 space-y-1 text-gray-700">
           {eligibility.map((item, index) => (

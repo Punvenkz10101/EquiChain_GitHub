@@ -23,7 +23,7 @@ const Navbar = () => {
   };
 
   return (
-    <nav className="bg-[#007373] text-white shadow-md">
+    <nav className="sticky top-0 z-50 bg-transparent backdrop-blur-md shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
@@ -53,7 +53,7 @@ const Navbar = () => {
             {isAuthenticated ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="text-white hover:bg-[#006363]">
+                  <Button variant="ghost" className="text-[#080808] hover:bg-[#69eeee]">
                     <User className="h-4 w-4 mr-2" />
                     {user?.name}
                     <ChevronDown className="h-4 w-4 ml-1" />
@@ -72,7 +72,7 @@ const Navbar = () => {
               </DropdownMenu>
             ) : (
               <div className="space-x-4">
-                <Button asChild variant="outline" className="text-white border-white hover:bg-[#006363]">
+                <Button asChild variant="outline" className="text-[#007373] border-white hover:bg-gray-100">
                   <Link to="/login">Login</Link>
                 </Button>
                 <Button asChild className="bg-white text-[#007373] hover:bg-gray-100">
@@ -143,14 +143,14 @@ const Navbar = () => {
                 <Button 
                   asChild 
                   variant="outline" 
-                  className="w-full text-white border-white hover:bg-[#006363]"
+                  className="w-full text-white hover:bg-[#006363]"
                   onClick={() => setIsMenuOpen(false)}
                 >
                   <Link to="/login">Login</Link>
                 </Button>
                 <Button 
                   asChild 
-                  className="w-full bg-white text-[#007373] hover:bg-gray-100"
+                  className="w-full text-[#007373] hover:bg-gray-100"
                   onClick={() => setIsMenuOpen(false)}
                 >
                   <Link to="/register">Register</Link>
