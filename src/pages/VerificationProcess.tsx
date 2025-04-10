@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useBlockchain } from "@/context/BlockchainContext";
 import { getSchemeById } from "@/data/schemes";
-import { Check as CheckIcon } from "lucide-react";
+import { Check as CheckIcon, X as XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
@@ -36,7 +36,7 @@ import {
   File
 } from "lucide-react";
 import { toast } from "sonner";
-import { extractDataFromDocuments, checkEligibility, generateTokenCode } from "@/data/mockAiService";
+import { extractDataFromDocuments, checkEligibility, generateTokenCode, verifyExtractedData, type VerificationResults } from "@/data/mockAiService";
 import { useUser } from "@clerk/clerk-react";
 
 interface ExtractedInfo {
@@ -106,6 +106,7 @@ const VerificationProcess = () => {
     timestamp: string;
   } | null>(null);
   const [faces, setFaces] = useState<string[]>([]);
+  const [verificationResults, setVerificationResults] = useState<VerificationResults | null>(null);
 
   if (!scheme) {
     return (
@@ -368,6 +369,58 @@ const VerificationProcess = () => {
     }
   }, [documentData?.faces]);
 
+  const verifyDocumentData = async () => {
+    if (!documentData?.extractedInfo || !documentData?.aadhaarNumber) {
+      toast.error("No document data available for verification");
+      return;
+    }
+
+    const results = verifyExtractedData(documentData.extractedInfo, documentData.aadhaarNumber);
+    setVerificationResults(results);
+    
+    if (!results) {
+      toast.error("Could not verify document data - no matching record found");
+      return;
+    }
+
+    const totalFields = Object.values(results).reduce((acc, section) => {
+      return acc + Object.values(section).length;
+    }, 0);
+
+    const matchedFields = Object.values(results).reduce((acc, section) => {
+      return acc + Object.values(section).filter(field => field.isMatch).length;
+    }, 0);
+
+    const matchPercentage = (matchedFields / totalFields) * 100;
+    
+    if (matchPercentage === 100) {
+      toast.success("All fields verified successfully!");
+    } else {
+      toast.warning(`${matchPercentage.toFixed(1)}% of fields matched. Please review discrepancies.`);
+    }
+  };
+
+  useEffect(() => {
+    if (documentData?.extractedInfo && documentData?.aadhaarNumber) {
+      verifyDocumentData();
+    }
+  }, [documentData]);
+
+  const renderVerificationStatus = (isMatch: boolean, expectedValue?: string | number, extractedValue?: string | number) => (
+    <div className="flex items-center gap-2">
+      {isMatch ? (
+        <CheckIcon className="h-5 w-5 text-green-500" />
+      ) : (
+        <div className="flex flex-col">
+          <XIcon className="h-5 w-5 text-red-500" />
+          <span className="text-xs text-red-500 mt-1">
+            Expected: {expectedValue}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="container max-w-6xl mx-auto py-8">
       <div className="mb-6">
@@ -477,194 +530,149 @@ const VerificationProcess = () => {
             <CardHeader>
               <CardTitle>Document Verification Results</CardTitle>
               <CardDescription>
-                Review the extracted information from your documents
+                Verification status for each field from your documents
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {documentData && (
-                <>
-                  {/* Personal Information */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h3 className="text-lg font-semibold mb-4">Personal Information</h3>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Full Name</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.['Full Name'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Personal Information']?.['Full Name'] || 'Not available'}
-                        </span>
+            <CardContent>
+              {verificationResults ? (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-lg font-medium mb-4">Personal Information</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex justify-between items-center">
+                        <span>Full Name</span>
+                        {renderVerificationStatus(
+                          verificationResults.personalInfo.fullName.isMatch,
+                          verificationResults.personalInfo.fullName.expectedValue,
+                          verificationResults.personalInfo.fullName.extractedValue
+                        )}
                       </div>
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Date of Birth</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.['Date of Birth'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Personal Information']?.['Date of Birth'] || 'Not available'}
-                        </span>
+                      <div className="flex justify-between items-center">
+                        <span>Date of Birth</span>
+                        {renderVerificationStatus(
+                          verificationResults.personalInfo.dateOfBirth.isMatch,
+                          verificationResults.personalInfo.dateOfBirth.expectedValue,
+                          verificationResults.personalInfo.dateOfBirth.extractedValue
+                        )}
                       </div>
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Age</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.Age ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Personal Information']?.Age || 'Not available'}
-                        </span>
+                      <div className="flex justify-between items-center">
+                        <span>Age</span>
+                        {renderVerificationStatus(
+                          verificationResults.personalInfo.age.isMatch,
+                          verificationResults.personalInfo.age.expectedValue,
+                          verificationResults.personalInfo.age.extractedValue
+                        )}
                       </div>
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Gender</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.Gender ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Personal Information']?.Gender || 'Not available'}
-                        </span>
+                      <div className="flex justify-between items-center">
+                        <span>Gender</span>
+                        {renderVerificationStatus(
+                          verificationResults.personalInfo.gender.isMatch,
+                          verificationResults.personalInfo.gender.expectedValue,
+                          verificationResults.personalInfo.gender.extractedValue
+                        )}
                       </div>
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Mobile Number</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.['Mobile Number'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Personal Information']?.['Mobile Number'] || 'Not available'}
-                        </span>
+                      <div className="flex justify-between items-center">
+                        <span>Mobile Number</span>
+                        {renderVerificationStatus(
+                          verificationResults.personalInfo.mobileNumber.isMatch,
+                          verificationResults.personalInfo.mobileNumber.expectedValue,
+                          verificationResults.personalInfo.mobileNumber.extractedValue
+                        )}
                       </div>
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Father's Name</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.["Father's Name"] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Personal Information']?.["Father's Name"] || 'Not available'}
-                        </span>
+                      <div className="flex justify-between items-center">
+                        <span>Father's Name</span>
+                        {renderVerificationStatus(
+                          verificationResults.personalInfo.fatherName.isMatch,
+                          verificationResults.personalInfo.fatherName.expectedValue,
+                          verificationResults.personalInfo.fatherName.extractedValue
+                        )}
                       </div>
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Caste</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.Caste ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Personal Information']?.Caste || 'Not available'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Aadhaar Details */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h3 className="text-lg font-semibold mb-4">Aadhaar Details</h3>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Aadhaar Number</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Aadhaar Details']?.['Aadhaar Number'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Aadhaar Details']?.['Aadhaar Number'] || 'Not available'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">VID</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Aadhaar Details']?.VID ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Aadhaar Details']?.VID || 'Not available'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Address</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Aadhaar Details']?.Address ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Aadhaar Details']?.Address || 'Not available'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Issue Date</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Aadhaar Details']?.['Issue Date'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Aadhaar Details']?.['Issue Date'] || 'Not available'}
-                        </span>
+                      <div className="flex justify-between items-center">
+                        <span>Caste</span>
+                        {renderVerificationStatus(
+                          verificationResults.personalInfo.caste.isMatch,
+                          verificationResults.personalInfo.caste.expectedValue,
+                          verificationResults.personalInfo.caste.extractedValue
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* PAN Details */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h3 className="text-lg font-semibold mb-4">PAN Details</h3>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Permanent Account Number</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['PAN Details']?.['PAN Number'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['PAN Details']?.['PAN Number'] || 'Not available'}
-                        </span>
+                  <Separator />
+
+                  <div>
+                    <h3 className="text-lg font-medium mb-4">Aadhaar Details</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex justify-between items-center">
+                        <span>Aadhaar Number</span>
+                        {renderVerificationStatus(
+                          verificationResults.aadhaarDetails.aadhaarNumber.isMatch,
+                          verificationResults.aadhaarDetails.aadhaarNumber.expectedValue,
+                          verificationResults.aadhaarDetails.aadhaarNumber.extractedValue
+                        )}
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span>VID</span>
+                        {renderVerificationStatus(
+                          verificationResults.aadhaarDetails.vid.isMatch,
+                          verificationResults.aadhaarDetails.vid.expectedValue,
+                          verificationResults.aadhaarDetails.vid.extractedValue
+                        )}
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span>Address</span>
+                        {renderVerificationStatus(
+                          verificationResults.aadhaarDetails.address.isMatch,
+                          verificationResults.aadhaarDetails.address.expectedValue,
+                          verificationResults.aadhaarDetails.address.extractedValue
+                        )}
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span>Issue Date</span>
+                        {renderVerificationStatus(
+                          verificationResults.aadhaarDetails.issueDate.isMatch,
+                          verificationResults.aadhaarDetails.issueDate.expectedValue,
+                          verificationResults.aadhaarDetails.issueDate.extractedValue
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Financial Information */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h3 className="text-lg font-semibold mb-4">Financial Information</h3>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="text-gray-600">Annual Income</span>
-                        <span className={`font-medium ${!documentData.extractedInfo?.['Financial Information']?.['Annual Income'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                          {documentData.extractedInfo?.['Financial Information']?.['Annual Income'] ? (
-                            <span className="flex items-center">
-                              <span className="mr-1">₹</span>
-                              {parseInt(documentData.extractedInfo['Financial Information']['Annual Income']).toLocaleString('en-IN')}
-                            </span>
-                          ) : 'Not available'}
-                        </span>
+                  <Separator />
+
+                  <div>
+                    <h3 className="text-lg font-medium mb-4">PAN Details</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex justify-between items-center">
+                        <span>PAN Number</span>
+                        {renderVerificationStatus(
+                          verificationResults.panDetails.panNumber.isMatch,
+                          verificationResults.panDetails.panNumber.expectedValue,
+                          verificationResults.panDetails.panNumber.extractedValue
+                        )}
                       </div>
                     </div>
                   </div>
-                </>
-              )}
-              
-              {eligibilityResult && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">Eligibility Result</h3>
-                  
-                  {eligibilityResult.eligible ? (
-                    <Alert className="border-[#22c55e] bg-[#22c55e]/10">
-                      <Check className="h-4 w-4 text-[#22c55e]" />
-                      <AlertTitle className="text-[#22c55e]">Eligible for {scheme.title}</AlertTitle>
-                      <AlertDescription className="text-[#22c55e]/80">
-                        {eligibilityResult.reason}
-                      </AlertDescription>
-                    </Alert>
-                  ) : (
-                    <Alert className="border-red-500 bg-red-50">
-                      <X className="h-4 w-4 text-red-500" />
-                      <AlertTitle className="text-red-700">Not Eligible for {scheme.title}</AlertTitle>
-                      <AlertDescription className="text-red-600">
-                        {eligibilityResult.reason}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  
-                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">Fraud Risk Score:</span>
-                      <span className={`text-sm font-medium ${
-                        eligibilityResult.fraud_score < 30 
-                          ? 'text-[#22c55e]' 
-                          : eligibilityResult.fraud_score < 70 
-                            ? 'text-yellow-500' 
-                            : 'text-red-500'
-                      }`}>
-                        {eligibilityResult.fraud_score}/100
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5 mt-1">
-                      <div 
-                        className={`h-2.5 rounded-full ${
-                          eligibilityResult.fraud_score < 30 
-                            ? 'bg-[#22c55e]' 
-                            : eligibilityResult.fraud_score < 70 
-                              ? 'bg-yellow-500' 
-                              : 'bg-red-500'
-                        }`}
-                        style={{ width: `${eligibilityResult.fraud_score}%` }}
-                      ></div>
+
+                  <Separator />
+
+                  <div>
+                    <h3 className="text-lg font-medium mb-4">Financial Information</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex justify-between items-center">
+                        <span>Annual Income</span>
+                        {renderVerificationStatus(
+                          verificationResults.financialInfo.annualIncome.isMatch,
+                          verificationResults.financialInfo.annualIncome.expectedValue,
+                          verificationResults.financialInfo.annualIncome.extractedValue
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              )}
-              
-              {eligibilityResult?.eligible && tokenCode && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">Verification Token</h3>
-                  <div className="bg-gray-50 p-4 rounded-lg text-center">
-                    <p className="text-sm text-gray-500 mb-2">Your Unique Token Code</p>
-                    <div className="flex items-center justify-center space-x-2">
-                      <span className="font-mono text-xl font-bold">{tokenCode}</span>
-                      <button 
-                        onClick={copyTokenToClipboard}
-                        className="text-[#007373] hover:text-[#006363]"
-                      >
-                        <Clipboard className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      This token will be recorded on the blockchain for verification.
-                    </p>
-                  </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">No verification results available</p>
                 </div>
               )}
             </CardContent>
@@ -725,8 +733,95 @@ const VerificationProcess = () => {
                 </p>
               </div>
               
+              <Separator className="my-6" />
+
+              {/* Add Eligibility and Fraud Score Section */}
               <div className="bg-gray-50 p-6 rounded-lg">
-                <div className="flex flex-col items-center">
+                <h3 className="text-lg font-medium mb-4">Identity Verification Result</h3>
+                
+                <div className="space-y-6">
+                  {/* Eligibility Status */}
+                  <div className="flex items-start gap-3">
+                    {eligibilityResult?.eligible ? (
+                      <>
+                        <CheckIcon className="h-6 w-6 text-green-500 mt-1" />
+                        <div>
+                          <h4 className="font-medium text-green-700">Identity Verified</h4>
+                          <p className="text-sm text-green-600">{eligibilityResult.reason}</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <XIcon className="h-6 w-6 text-red-500 mt-1" />
+                        <div>
+                          <h4 className="font-medium text-red-700">Verification Failed</h4>
+                          <p className="text-sm text-red-600">{eligibilityResult?.reason}</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Fraud Score */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium">Identity Match Score</span>
+                      <span className={`text-sm font-medium ${
+                        (100 - (eligibilityResult?.fraud_score || 0)) >= 70 
+                          ? 'text-green-600' 
+                          : (100 - (eligibilityResult?.fraud_score || 0)) >= 30 
+                            ? 'text-yellow-600' 
+                            : 'text-red-600'
+                      }`}>
+                        {100 - (eligibilityResult?.fraud_score || 0)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5">
+                      <div 
+                        className={`h-2.5 rounded-full transition-all duration-500 ${
+                          (100 - (eligibilityResult?.fraud_score || 0)) >= 70 
+                            ? 'bg-green-500' 
+                            : (100 - (eligibilityResult?.fraud_score || 0)) >= 30 
+                              ? 'bg-yellow-500' 
+                              : 'bg-red-500'
+                        }`}
+                        style={{ width: `${100 - (eligibilityResult?.fraud_score || 0)}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-2">
+                      {(100 - (eligibilityResult?.fraud_score || 0)) >= 70 
+                        ? 'High confidence in identity match' 
+                        : (100 - (eligibilityResult?.fraud_score || 0)) >= 30 
+                          ? 'Moderate confidence in identity match' 
+                          : 'Low confidence in identity match'}
+                    </p>
+                  </div>
+
+                  {/* Token Display (if eligible) */}
+                  {eligibilityResult?.eligible && tokenCode && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <CheckIcon className="h-5 w-5 text-green-500" />
+                        <h4 className="font-medium text-gray-900">Verification Token</h4>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 bg-white p-3 rounded-md">
+                        <code className="text-lg font-mono font-semibold">{tokenCode}</code>
+                        <button 
+                          onClick={copyTokenToClipboard}
+                          className="text-gray-500 hover:text-gray-700 transition-colors"
+                        >
+                          <Clipboard className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 text-center mt-2">
+                        This token will be recorded on the blockchain for verification
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-6 rounded-lg">
+                <div className="flex flex-col items-center py-6">
                   <QrCode className="h-12 w-12 text-[#007373] mb-4" />
                   <p className="text-sm text-gray-500 mb-2">Your Verification Token</p>
                   <p className="font-mono text-xl font-bold mb-2">{tokenCode}</p>
