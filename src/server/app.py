@@ -12,6 +12,8 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import cv2
 import json
+from datetime import datetime
+from bson import ObjectId
 
 # Load environment variables
 load_dotenv()
@@ -219,17 +221,23 @@ def upload_file():
     if not files or all(file.filename == '' for file in files):
         return jsonify({'error': 'No selected files'}), 400
     
-    combined_ocr_text = ""
-    all_faces = []
-    processed_files = []
-    
     try:
+        # Create user-specific collection
+        user_collection = db[f'user_{user_id}_documents']
+        faces_collection = db[f'user_{user_id}_faces']
+        
+        processed_files = []
+        all_faces = []
+        combined_ocr_text = ""
+        
         for file in files:
             if file and allowed_file(file.filename):
+                # Generate unique filename with timestamp
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 filename = secure_filename(file.filename)
-                file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                unique_filename = f"{user_id}_{timestamp}_{filename}"
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
                 file.save(file_path)
-                processed_files.append(file_path)
                 
                 # Process OCR for each file
                 ocr_text = process_ocr(file_path)
@@ -238,57 +246,78 @@ def upload_file():
                 
                 # Detect faces in each file
                 faces = detect_faces(file_path)
-                all_faces.extend(faces)
-        
-        print("\nCombined OCR Text from all documents:")
-        print("=" * 50)
-        print(combined_ocr_text)
-        print("=" * 50)
+                
+                # Store faces in MongoDB
+                for face_idx, face_img in enumerate(faces):
+                    face_filename = f"{user_id}_{timestamp}_face_{face_idx}.jpg"
+                    face_path = os.path.join(FACES_FOLDER, face_filename)
+                    cv2.imwrite(face_path, face_img)
+                    
+                    # Store face metadata in MongoDB
+                    face_data = {
+                        'user_id': user_id,
+                        'document_filename': unique_filename,
+                        'face_filename': face_filename,
+                        'timestamp': datetime.now(),
+                        'face_path': face_path
+                    }
+                    faces_collection.insert_one(face_data)
+                    all_faces.append(face_filename)
+                
+                processed_files.append({
+                    'filename': unique_filename,
+                    'original_name': filename,
+                    'upload_time': datetime.now(),
+                    'file_path': file_path
+                })
         
         # Extract information using combined OCR text
         extracted_info = extract_info_with_gemini(combined_ocr_text)
         
-        # Prepare document data
+        # Store document data in MongoDB
         document_data = {
-            'userId': user_id,
-            'filenames': [os.path.basename(f) for f in processed_files],
-            'ocrText': combined_ocr_text,
+            'user_id': user_id,
+            'timestamp': datetime.now(),
+            'files': processed_files,
             'faces': all_faces,
-            'extractedInfo': extracted_info,
-            'timestamp': time.time()
+            'ocr_text': combined_ocr_text,
+            'extracted_info': extracted_info
         }
         
-        # Store in MongoDB
-        collection = db[f'user_{user_id}']
-        result = collection.insert_one(document_data)
+        result = user_collection.insert_one(document_data)
         
-        # Add document ID to response
-        document_data['_id'] = str(result.inserted_id)
-        
-        return jsonify(document_data)
+        return jsonify({
+            'status': 'success',
+            'document_id': str(result.inserted_id),
+            'files': processed_files,
+            'faces': all_faces,
+            'extractedInfo': extracted_info,
+            'ocrText': combined_ocr_text
+        })
         
     except Exception as e:
         print(f"Error processing files: {e}")
         # Clean up uploaded files in case of error
-        for file_path in processed_files:
+        for processed_file in processed_files:
             try:
-                os.remove(file_path)
+                os.remove(processed_file['file_path'])
             except:
                 pass
         return jsonify({'error': str(e)}), 500
-            
-    return jsonify({'error': 'Invalid file type'}), 400
 
 @app.route('/api/documents/<user_id>', methods=['GET'])
-def get_documents(user_id):
+def get_user_documents(user_id):
     try:
-        collection = db[f'user_{user_id}']
-        documents = list(collection.find({}, {'_id': 1, 'filename': 1, 'timestamp': 1}))
+        user_collection = db[f'user_{user_id}_documents']
+        documents = list(user_collection.find())
         
-        # Convert ObjectId to string
+        # Convert ObjectId and datetime to string for JSON serialization
         for doc in documents:
             doc['_id'] = str(doc['_id'])
-            
+            doc['timestamp'] = doc['timestamp'].isoformat()
+            for file in doc['files']:
+                file['upload_time'] = file['upload_time'].isoformat()
+        
         return jsonify(documents)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -296,12 +325,51 @@ def get_documents(user_id):
 @app.route('/api/documents/<user_id>/<document_id>', methods=['GET'])
 def get_document(user_id, document_id):
     try:
-        collection = db[f'user_{user_id}']
-        document = collection.find_one({'_id': document_id})
+        user_collection = db[f'user_{user_id}_documents']
+        document = user_collection.find_one({'_id': ObjectId(document_id)})
         
         if document:
+            # Convert ObjectId and datetime to string
             document['_id'] = str(document['_id'])
+            document['timestamp'] = document['timestamp'].isoformat()
+            for file in document['files']:
+                file['upload_time'] = file['upload_time'].isoformat()
             return jsonify(document)
+            
+        return jsonify({'error': 'Document not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/documents/<user_id>/<document_id>', methods=['DELETE'])
+def delete_document(user_id, document_id):
+    try:
+        user_collection = db[f'user_{user_id}_documents']
+        faces_collection = db[f'user_{user_id}_faces']
+        
+        # Get document details
+        document = user_collection.find_one({'_id': ObjectId(document_id)})
+        
+        if document:
+            # Delete associated files
+            for file in document['files']:
+                file_path = file['file_path']
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            
+            # Delete associated faces
+            for face in document['faces']:
+                # Delete face file
+                face_path = os.path.join(FACES_FOLDER, face)
+                if os.path.exists(face_path):
+                    os.remove(face_path)
+                # Delete face record
+                faces_collection.delete_many({'face_filename': face})
+            
+            # Delete document record
+            user_collection.delete_one({'_id': ObjectId(document_id)})
+            
+            return jsonify({'status': 'success', 'message': 'Document and associated data deleted successfully'})
+        
         return jsonify({'error': 'Document not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -309,6 +377,21 @@ def get_document(user_id, document_id):
 @app.route('/faces/<filename>')
 def serve_face(filename):
     return send_from_directory(FACES_FOLDER, filename)
+
+@app.route('/api/faces/<user_id>', methods=['GET'])
+def get_user_faces(user_id):
+    try:
+        faces_collection = db[f'user_{user_id}_faces']
+        faces = list(faces_collection.find())
+        
+        # Convert ObjectId and datetime to string
+        for face in faces:
+            face['_id'] = str(face['_id'])
+            face['timestamp'] = face['timestamp'].isoformat()
+        
+        return jsonify(faces)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("Starting server...")
