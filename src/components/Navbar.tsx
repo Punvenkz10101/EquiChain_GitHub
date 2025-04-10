@@ -1,9 +1,7 @@
-
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Menu, X, ChevronDown, LogOut, User } from "lucide-react";
+import { Menu, X, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,21 +9,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { UserButton, useUser, SignedIn, SignedOut } from "@clerk/clerk-react";
 
 const Navbar = () => {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user } = useUser();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-
-  const handleLogout = () => {
-    logout();
-    navigate("/");
-  };
 
   return (
     <nav className="sticky top-0 z-50 bg-transparent backdrop-blur-md shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
+        <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <Link to="/" className="flex items-center">
               <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center">
@@ -41,48 +35,31 @@ const Navbar = () => {
               <Link to="/public-verification" className="hover:text-gray-200 px-3 py-2 rounded-md text-sm font-medium">
                 Public Verification
               </Link>
-              {isAuthenticated && (
+              <SignedIn>
                 <Link to="/dashboard" className="hover:text-gray-200 px-3 py-2 rounded-md text-sm font-medium">
                   Dashboard
                 </Link>
-              )}
+              </SignedIn>
             </div>
           </div>
           
-          <div className="hidden md:flex items-center">
-            {isAuthenticated ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="text-[#080808] hover:bg-[#69eeee]">
-                    <User className="h-4 w-4 mr-2" />
-                    {user?.name}
-                    <ChevronDown className="h-4 w-4 ml-1" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => navigate("/dashboard")}>
-                    Dashboard
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout} className="text-red-500">
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Logout
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
-              <div className="space-x-4">
+          <div className="flex items-center space-x-4">
+            <SignedIn>
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
+            <SignedOut>
+              <div className="hidden md:flex space-x-4">
                 <Button asChild variant="outline" className="text-[#007373] border-white hover:bg-gray-100">
-                  <Link to="/login">Login</Link>
+                  <Link to="/sign-in">Login</Link>
                 </Button>
                 <Button asChild className="bg-white text-[#007373] hover:bg-gray-100">
-                  <Link to="/register">Register</Link>
+                  <Link to="/sign-up">Register</Link>
                 </Button>
               </div>
-            )}
+            </SignedOut>
           </div>
           
-          <div className="flex md:hidden items-center">
+          <div className="md:hidden">
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               type="button"
@@ -118,7 +95,7 @@ const Navbar = () => {
             >
               Public Verification
             </Link>
-            {isAuthenticated && (
+            <SignedIn>
               <Link 
                 to="/dashboard" 
                 className="block px-3 py-2 rounded-md text-base font-medium text-white hover:bg-[#006363]"
@@ -126,19 +103,8 @@ const Navbar = () => {
               >
                 Dashboard
               </Link>
-            )}
-            
-            {isAuthenticated ? (
-              <button
-                onClick={() => {
-                  handleLogout();
-                  setIsMenuOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 rounded-md text-base font-medium text-white hover:bg-[#006363]"
-              >
-                Logout
-              </button>
-            ) : (
+            </SignedIn>
+            <SignedOut>
               <div className="space-y-2 pt-4">
                 <Button 
                   asChild 
@@ -146,17 +112,17 @@ const Navbar = () => {
                   className="w-full text-white hover:bg-[#006363]"
                   onClick={() => setIsMenuOpen(false)}
                 >
-                  <Link to="/login">Login</Link>
+                  <Link to="/sign-in">Login</Link>
                 </Button>
                 <Button 
                   asChild 
                   className="w-full text-[#007373] hover:bg-gray-100"
                   onClick={() => setIsMenuOpen(false)}
                 >
-                  <Link to="/register">Register</Link>
+                  <Link to="/sign-up">Register</Link>
                 </Button>
               </div>
-            )}
+            </SignedOut>
           </div>
         </div>
       )}
