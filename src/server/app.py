@@ -1,198 +1,315 @@
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
-from pymongo import MongoClient
-from werkzeug.utils import secure_filename
 import os
-import cv2
-import numpy as np
-from PIL import Image
-import matplotlib.pyplot as plt
-from ultralytics import YOLO
+import time
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
+from werkzeug.utils import secure_filename
+from pymongo import MongoClient
 from azure.cognitiveservices.vision.computervision import ComputerVisionClient
 from azure.cognitiveservices.vision.computervision.models import OperationStatusCodes
 from msrest.authentication import CognitiveServicesCredentials
-from google import genai
-from datetime import datetime
-import base64
-from pathlib import Path
+from ultralytics import YOLO
+import google.generativeai as genai
+from dotenv import load_dotenv
+import cv2
+import json
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-# MongoDB setup
-client = MongoClient('mongodb://localhost:27017/')
-db = client.equichain
+# Configuration
+UPLOAD_FOLDER = 'uploads'
+FACES_FOLDER = 'faces'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf'}
 
-# Azure and Gemini API credentials
-AZURE_ENDPOINT = "https://testingequichain.cognitiveservices.azure.com/"
-AZURE_KEY = "QhVsvy4xsQeRKc6GyOjpoStvZu8fVZtfh7tvAqNC8UHtdopYOxK2JQQJ99BDACGhslBXJ3w3AAAFACOGaCIK"
-GEMINI_API_KEY = "AIzaSyCLTS8qhzI-YgOSjUywmh4ySV2sh_Y26ss"
+# Create necessary directories
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(FACES_FOLDER, exist_ok=True)
 
-# Initialize clients
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# Initialize MongoDB client
+mongo_client = MongoClient(os.getenv('MONGODB_URI'))
+db = mongo_client['equichain']
+
+# Initialize Azure Computer Vision client
 azure_client = ComputerVisionClient(
-    endpoint=AZURE_ENDPOINT,
-    credentials=CognitiveServicesCredentials(AZURE_KEY)
+    endpoint=os.getenv('AZURE_ENDPOINT'),
+    credentials=CognitiveServicesCredentials(os.getenv('AZURE_KEY'))
 )
-genai_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Initialize YOLO model
+# Initialize Gemini
+genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+model = genai.GenerativeModel('gemini-2.0-flash')
+
+# Initialize YOLO
 yolo_model = YOLO("yolov8n.pt")
 
-# Setup directories
-UPLOAD_FOLDER = Path(__file__).parent.parent / 'uploads'
-FACES_FOLDER = Path(__file__).parent.parent / 'faces'
-UPLOAD_FOLDER.mkdir(exist_ok=True)
-FACES_FOLDER.mkdir(exist_ok=True)
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def process_file(file_path, user_id):
-    """Process a single file for OCR and face detection"""
-    all_text = ""
-    face_paths = []
-    
-    # OCR via Azure
+def process_ocr(file_path):
+    """Process OCR using Azure Computer Vision"""
+    print(f"\nProcessing OCR for file: {file_path}")
     with open(file_path, "rb") as image_stream:
-        try:
-            raw_response = azure_client.read_in_stream(image_stream, language="en", raw=True)
-            operation_location = raw_response.headers["Operation-Location"]
-            operation_id = operation_location.split("/")[-1]
+        raw_response = azure_client.read_in_stream(image_stream, language="en", raw=True)
+        operation_location = raw_response.headers["Operation-Location"]
+        operation_id = operation_location.split("/")[-1]
 
-            while True:
-                result = azure_client.get_read_result(operation_id)
-                if result.status not in ['notStarted', 'running']:
-                    break
-                
-            if result.status == OperationStatusCodes.succeeded:
-                for page in result.analyze_result.read_results:
-                    for line in page.lines:
-                        all_text += line.text + "\n"
-        except Exception as e:
-            print(f"OCR failed: {e}")
-            return None, []
+    while True:
+        result = azure_client.get_read_result(operation_id)
+        if result.status not in ['notStarted', 'running']:
+            break
+        time.sleep(1)
 
-    # Face detection
+    if result.status == OperationStatusCodes.succeeded:
+        all_text = ""
+        for page in result.analyze_result.read_results:
+            for line in page.lines:
+                all_text += line.text + "\n"
+        print(f"OCR Text extracted: {all_text[:100]}...")  # Print first 100 chars
+        return all_text
+    print("OCR processing failed")
+    return ""
+
+def detect_faces(file_path):
+    """Detect faces using YOLOv8"""
+    faces = []
     try:
-        img = cv2.imread(str(file_path))
+        img = cv2.imread(file_path)
         if img is None:
-            raise Exception("Image could not be loaded")
-
-        results = yolo_model(img)
-        face_count = 0
-
+            return faces
+        
+        results = yolo_model(img)[0]
         for box, cls in zip(results.boxes.xyxy, results.boxes.cls):
-            if int(cls.item()) == 0:  # person class
+            class_id = int(cls.item())
+            if class_id == 0:  # class 0 is "person" in COCO
                 x1, y1, x2, y2 = map(int, box)
-                face_count += 1
+                face_count = len(faces) + 1
                 face_img = img[y1:y2, x1:x2]
-                
-                # Save face with user_id in filename
-                face_filename = f"face_{user_id}_{face_count}.jpg"
-                face_path = FACES_FOLDER / face_filename
-                cv2.imwrite(str(face_path), face_img)
-                face_paths.append(str(face_path))
-
+                face_path = f"face_{face_count}.jpg"
+                cv2.imwrite(os.path.join(FACES_FOLDER, face_path), face_img)
+                faces.append(face_path)
     except Exception as e:
-        print(f"Face detection failed: {e}")
+        print(f"Face detection error: {e}")
+    return faces
 
-    return all_text, face_paths
+def extract_info_with_gemini(ocr_text):
+    # Print OCR text for debugging
+    print("\nOCR Text for Analysis:")
+    print("=" * 50)
+    print(ocr_text)
+    print("=" * 50)
 
-def extract_details_with_gemini(text):
-    """Extract details using Gemini API"""
     prompt = f"""
-    Extract all the following fields from the OCR text below. These may appear on Aadhaar, PAN card, or Ration card. Return output as a JSON with null for missing values.
-
-    Fields to extract:
-    - name
-    - dob
-    - gender
-    - aadhaar_number
-    - pan_number
-    - ration_card_number
-    - address
-    - father_name
-    - photo_id_type
+    Extract the following information from the document OCR text. Return a JSON object with the extracted values.
+    If a value is not found, return null for that field.
 
     OCR Text:
-    {text}
+    {ocr_text}
+
+    Required fields and extraction instructions:
+    {{
+        "Personal Information": {{
+            "Full Name": "extract the full name (look for patterns like 'Name:', 'Full Name:', or text before 'DOB:')",
+            "Date of Birth": "extract date of birth in DD/MM/YYYY format (look for 'DOB:', 'Date of Birth:', or similar patterns)",
+            "Age": "calculate age from date of birth",
+            "Gender": "extract gender (look for 'Gender:', 'Sex:', or M/F indicators)",
+            "Mobile Number": "extract the mobile number (look for 10-digit numbers, patterns like 'Mobile:', 'Phone:')",
+            "Father's Name": "extract father's name (look for 'Father:', 'Father's Name:', or similar patterns)",
+            "Caste": "extract caste information (look for 'Caste:', 'Category:', or similar terms)"
+        }},
+        "Aadhaar Details": {{
+            "Aadhaar Number": "extract the 12-digit Aadhaar number (look for 12 digits in groups of 4)",
+            "VID": "extract the 16-digit VID number (look for 16 digits after 'VID:')",
+            "Address": "extract the complete address (look for text after 'Address:', 'C/O:', or similar patterns)",
+            "Issue Date": "extract the issue date in DD/MM/YYYY format (look for 'Issue Date:', 'Date of Issue:', or similar patterns)"
+        }},
+        "PAN Details": {{
+            "PAN Number": "extract the Permanent Account Number (look for 'Permanent Account Number' or 'PAN' followed by 10 characters in format AAAAA9999A, or 5 letters followed by 4 numbers and 1 letter)"
+        }},
+        "Financial Information": {{
+            "Annual Income": "extract the annual income (look for patterns like 'Annual Income:', 'Income:', 'Rs.', 'INR', '₹', or numbers followed by 'per annum', 'p.a.', 'PA', 'Lakh', 'Lac', 'Crore')"
+        }}
+    }}
+
+    Instructions:
+    1. Look for patterns in the text carefully
+    2. Clean the extracted text by removing extra spaces and special characters
+    3. Format dates consistently in DD/MM/YYYY format
+    4. Format income as a number without currency symbols
+    5. Return a valid JSON object with all required fields
+    6. If a field cannot be found, set it to null
+    7. Calculate age from date of birth if available
+    8. For PAN number, look for:
+       - 10 characters in format AAAAA9999A
+       - Text after 'Permanent Account Number' or 'PAN'
+       - 5 letters followed by 4 numbers and 1 letter
+    9. For income, look for:
+       - Numbers followed by 'Lakh', 'Lac', 'Crore'
+       - Currency symbols (₹, Rs., INR)
+       - Terms like 'per annum', 'p.a.', 'PA'
+       - Convert all amounts to numbers (e.g., '5 Lakh' to '500000')
     """
 
     try:
-        response = genai_client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt)
-        return response.text
+        response = model.generate_content(prompt)
+        print("\nGemini Response:")
+        print("=" * 50)
+        print(response.text)
+        print("=" * 50)
+        
+        # Parse the response text to extract the JSON
+        response_text = response.text
+        # Find the JSON object in the response
+        start_idx = response_text.find('{')
+        end_idx = response_text.rfind('}') + 1
+        if start_idx != -1 and end_idx != -1:
+            json_str = response_text[start_idx:end_idx]
+            extracted_data = json.loads(json_str)
+            
+            # Clean and standardize the data
+            for section in extracted_data:
+                for key, value in extracted_data[section].items():
+                    if isinstance(value, str):
+                        extracted_data[section][key] = value.strip()
+                    if value == "":
+                        extracted_data[section][key] = None
+                    
+                    # Format income if present
+                    if key == "Annual Income" and value:
+                        # Remove currency symbols and convert to standard format
+                        value = value.replace('₹', '').replace('Rs.', '').replace('INR', '').strip()
+                        # Remove 'per annum' or similar text
+                        value = value.split('per')[0].strip()
+                        # Convert Lakh/Lac to numbers
+                        if 'Lakh' in value or 'Lac' in value:
+                            value = value.replace('Lakh', '').replace('Lac', '').strip()
+                            value = str(float(value) * 100000)
+                        elif 'Crore' in value:
+                            value = value.replace('Crore', '').strip()
+                            value = str(float(value) * 10000000)
+                        extracted_data[section][key] = value
+            
+            print("\nProcessed Extracted Data:")
+            print("=" * 50)
+            print(json.dumps(extracted_data, indent=2))
+            print("=" * 50)
+            return extracted_data
+            
+        print("No valid JSON found in response")
+        return {}
     except Exception as e:
-        print(f"Gemini API Error: {e}")
-        return None
+        print(f"Gemini error: {e}")
+        return {}
 
 @app.route('/api/upload', methods=['POST'])
-def upload_files():
-    if 'files' not in request.files:
-        return jsonify({'error': 'No files provided'}), 400
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
     
-    files = request.files.getlist('files')
+    files = request.files.getlist('file')
     user_id = request.form.get('userId')
-    scheme_id = request.form.get('schemeId')
     
     if not user_id:
         return jsonify({'error': 'User ID is required'}), 400
-
-    # Create user directory if it doesn't exist
-    user_dir = UPLOAD_FOLDER / user_id
-    user_dir.mkdir(exist_ok=True)
-
-    uploaded_files = []
-    extracted_data = []
-
-    for file in files:
-        if file.filename:
-            # Save file
-            filename = secure_filename(file.filename)
-            file_path = user_dir / filename
-            file.save(file_path)
-
-            # Process file
-            ocr_text, face_paths = process_file(file_path, user_id)
-            extracted_info = extract_details_with_gemini(ocr_text) if ocr_text else None
-
-            # Store in MongoDB
-            file_doc = {
-                'userId': user_id,
-                'schemeId': scheme_id,
-                'originalName': filename,
-                'filePath': str(file_path),
-                'uploadDate': datetime.utcnow(),
-                'ocrText': ocr_text,
-                'extractedInfo': extracted_info,
-                'facePaths': face_paths
-            }
+    
+    if not files or all(file.filename == '' for file in files):
+        return jsonify({'error': 'No selected files'}), 400
+    
+    combined_ocr_text = ""
+    all_faces = []
+    processed_files = []
+    
+    try:
+        for file in files:
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(file_path)
+                processed_files.append(file_path)
+                
+                # Process OCR for each file
+                ocr_text = process_ocr(file_path)
+                if ocr_text:
+                    combined_ocr_text += f"\n\n=== Document: {filename} ===\n{ocr_text}\n"
+                
+                # Detect faces in each file
+                faces = detect_faces(file_path)
+                all_faces.extend(faces)
+        
+        print("\nCombined OCR Text from all documents:")
+        print("=" * 50)
+        print(combined_ocr_text)
+        print("=" * 50)
+        
+        # Extract information using combined OCR text
+        extracted_info = extract_info_with_gemini(combined_ocr_text)
+        
+        # Prepare document data
+        document_data = {
+            'userId': user_id,
+            'filenames': [os.path.basename(f) for f in processed_files],
+            'ocrText': combined_ocr_text,
+            'faces': all_faces,
+            'extractedInfo': extracted_info,
+            'timestamp': time.time()
+        }
+        
+        # Store in MongoDB
+        collection = db[f'user_{user_id}']
+        result = collection.insert_one(document_data)
+        
+        # Add document ID to response
+        document_data['_id'] = str(result.inserted_id)
+        
+        return jsonify(document_data)
+        
+    except Exception as e:
+        print(f"Error processing files: {e}")
+        # Clean up uploaded files in case of error
+        for file_path in processed_files:
+            try:
+                os.remove(file_path)
+            except:
+                pass
+        return jsonify({'error': str(e)}), 500
             
-            # Save to MongoDB
-            result = db.files.insert_one(file_doc)
+    return jsonify({'error': 'Invalid file type'}), 400
+
+@app.route('/api/documents/<user_id>', methods=['GET'])
+def get_documents(user_id):
+    try:
+        collection = db[f'user_{user_id}']
+        documents = list(collection.find({}, {'_id': 1, 'filename': 1, 'timestamp': 1}))
+        
+        # Convert ObjectId to string
+        for doc in documents:
+            doc['_id'] = str(doc['_id'])
             
-            uploaded_files.append({
-                'id': str(result.inserted_id),
-                'originalName': filename,
-                'extractedInfo': extracted_info
-            })
+        return jsonify(documents)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    return jsonify({
-        'message': 'Files processed successfully',
-        'files': uploaded_files
-    })
+@app.route('/api/documents/<user_id>/<document_id>', methods=['GET'])
+def get_document(user_id, document_id):
+    try:
+        collection = db[f'user_{user_id}']
+        document = collection.find_one({'_id': document_id})
+        
+        if document:
+            document['_id'] = str(document['_id'])
+            return jsonify(document)
+        return jsonify({'error': 'Document not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/files/<user_id>', methods=['GET'])
-def get_user_files(user_id):
-    files = list(db.files.find({'userId': user_id}))
-    for file in files:
-        file['_id'] = str(file['_id'])
-    return jsonify(files)
-
-@app.route('/api/download/<file_id>', methods=['GET'])
-def download_file(file_id):
-    file_doc = db.files.find_one({'_id': file_id})
-    if not file_doc:
-        return jsonify({'error': 'File not found'}), 404
-    return send_file(file_doc['filePath'])
+@app.route('/faces/<filename>')
+def serve_face(filename):
+    return send_from_directory(FACES_FOLDER, filename)
 
 if __name__ == '__main__':
-    app.run(port=5000, debug=True)
+    print("Starting server...")
+    app.run(debug=True, port=5000)

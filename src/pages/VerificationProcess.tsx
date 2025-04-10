@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useBlockchain } from "@/context/BlockchainContext";
@@ -32,14 +32,60 @@ import {
   FileText,
   CreditCard,
   FileSpreadsheet,
-  File
+  File,
+  User
 } from "lucide-react";
 import { toast } from "sonner";
 import { extractDataFromDocuments, checkEligibility, generateTokenCode } from "@/data/mockAiService";
+import { useUser } from "@clerk/clerk-react";
+
+interface ExtractedInfo {
+  'Personal Information': {
+    'Full Name': string | null;
+    'Date of Birth': string | null;
+    'Age': string | null;
+    'Gender': string | null;
+    'Mobile Number': string | null;
+    "Father's Name": string | null;
+    'Caste': string | null;
+  };
+  'Aadhaar Details': {
+    'Aadhaar Number': string | null;
+    'VID': string | null;
+    'Address': string | null;
+    'Issue Date': string | null;
+  };
+  'PAN Details': {
+    'PAN Number': string | null;
+  };
+  'Financial Information': {
+    'Annual Income': string | null;
+  };
+}
+
+interface DocumentData {
+  name: string;
+  aadhaarNumber: string;
+  age: number;
+  address: string;
+  faces: string[];
+  ocrText: string;
+  extractedInfo: ExtractedInfo;
+  filenames: string[];
+}
+
+interface EligibilityResult {
+  eligible: boolean;
+  reason: string;
+  fraud_score: number;
+}
+
+type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
 const VerificationProcess = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user: clerkUser, isLoaded } = useUser();
   const { user, updateUserProfile } = useAuth();
   const { isConnected, addClaim } = useBlockchain();
   
@@ -49,11 +95,22 @@ const VerificationProcess = () => {
   const [activeTab, setActiveTab] = useState("requirements");
   const [files, setFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [documentData, setDocumentData] = useState<any>(null);
-  const [eligibilityResult, setEligibilityResult] = useState<any>(null);
+  const [documentData, setDocumentData] = useState<DocumentData | null>(null);
+  const [eligibilityResult, setEligibilityResult] = useState<EligibilityResult | null>(null);
   const [tokenCode, setTokenCode] = useState<string | null>(null);
   const [isRecordingOnBlockchain, setIsRecordingOnBlockchain] = useState(false);
   const [blockchainRecorded, setBlockchainRecorded] = useState(false);
+  const [extractedInfo, setExtractedInfo] = useState<ExtractedInfo | null>(null);
+  const [faces, setFaces] = useState<string[]>([]);
+  const [ocrText, setOcrText] = useState<string>('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus>('idle');
+
+  useEffect(() => {
+    if (isLoaded && !clerkUser) {
+      navigate("/sign-in");
+    }
+  }, [isLoaded, clerkUser, navigate]);
 
   if (!scheme) {
     return (
@@ -87,23 +144,96 @@ const VerificationProcess = () => {
       return;
     }
 
+    if (!isLoaded) {
+      toast.error("Authentication is still loading");
+      return;
+    }
+
+    if (!clerkUser) {
+      toast.error("Please sign in to process documents");
+      navigate("/sign-in");
+      return;
+    }
+
     setIsProcessing(true);
     setDocumentData(null);
     setEligibilityResult(null);
     
     try {
-      // Extract data from documents using OCR (mock)
-      const extractedData = await extractDataFromDocuments(files);
-      setDocumentData(extractedData);
+      const formData = new FormData();
+      files.forEach(file => formData.append('file', file));
+      formData.append('userId', clerkUser.id);
+
+      console.log("Processing documents for user:", clerkUser.id);
+      console.log("Number of files:", files.length);
+
+      // Add timeout and proper error handling
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for multiple files
+
+      const response = await fetch('http://localhost:5000/api/upload', {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal
+      }).catch(error => {
+        if (error.name === 'AbortError') {
+          throw new Error('Request timed out. Please check if the server is running.');
+        }
+        throw new Error('Failed to connect to the server. Please check if the server is running.');
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to process documents');
+      }
+
+      const data = await response.json();
+      console.log("Received data from backend:", data);
+      
+      if (data.status === 'error') {
+        throw new Error(data.message || 'Failed to process documents');
+      }
+
+      // Log detailed information
+      console.log("Gemini Response Text:", data.geminiResponse);
+      console.log("Extracted Information:", data.extractedInfo);
+      console.log("Detected Faces:", data.faces);
+      console.log("OCR Text:", data.ocrText);
+      console.log("Processed Files:", data.filenames);
+
+      // Store in localStorage
+      const storedData = {
+        ...data,
+        timestamp: new Date().toISOString()
+      };
+      localStorage.setItem(`document_${clerkUser.id}_${data._id}`, JSON.stringify(storedData));
+
+      // Update state with processed data
+      const newDocumentData = {
+        name: data.extractedInfo?.['Personal Information']?.['Full Name'] || '',
+        aadhaarNumber: data.extractedInfo?.['Aadhaar Details']?.['Aadhaar Number'] || '',
+        age: calculateAge(data.extractedInfo?.['Personal Information']?.['Date of Birth']),
+        address: data.extractedInfo?.['Aadhaar Details']?.Address || '',
+        faces: data.faces || [],
+        ocrText: data.ocrText || '',
+        extractedInfo: data.extractedInfo || {},
+        filenames: data.filenames || []
+      };
+
+      console.log("Setting document data:", newDocumentData);
+      setDocumentData(newDocumentData);
+
       toast.success("Documents processed successfully");
       
       // Update user profile with extracted Aadhaar if available
-      if (extractedData.aadhaarNumber && user) {
-        updateUserProfile({ aadhaarNumber: extractedData.aadhaarNumber });
+      if (data.extractedInfo?.['Aadhaar Details']?.['Aadhaar Number']) {
+        updateUserProfile({ aadhaarNumber: data.extractedInfo['Aadhaar Details']['Aadhaar Number'] });
       }
       
       // Check eligibility based on scheme criteria and extracted data
-      const result = await checkEligibility(schemeId, extractedData);
+      const result = await checkEligibility(schemeId, data.extractedInfo);
       setEligibilityResult(result);
       
       // Generate token code if eligible
@@ -116,10 +246,23 @@ const VerificationProcess = () => {
       setActiveTab("verification");
     } catch (error) {
       console.error("Error processing documents:", error);
-      toast.error("Failed to process documents. Please try again.");
+      toast.error(error instanceof Error ? error.message : "Failed to process documents. Please try again.");
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // Helper function to calculate age from date of birth
+  const calculateAge = (dob: string | undefined): number => {
+    if (!dob) return 0;
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
   };
 
   const handleRecordOnBlockchain = async () => {
@@ -133,8 +276,8 @@ const VerificationProcess = () => {
     try {
       // Record the claim on the blockchain
       await addClaim({
-        userHash: user?.id || "unknown",
-        userName: user?.name || "Unknown User",
+        userHash: clerkUser?.id || "unknown",
+        userName: clerkUser?.fullName || "Unknown User",
         scheme: scheme.title,
         tokenCode,
         isEligible: true
@@ -157,6 +300,45 @@ const VerificationProcess = () => {
     if (tokenCode) {
       navigator.clipboard.writeText(tokenCode);
       toast.success("Token copied to clipboard");
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setSelectedFile(file);
+    setUploadStatus('uploading');
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('http://localhost:5000/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      console.log('Server response:', data);
+
+      if (data.status === 'success') {
+        setUploadStatus('success');
+        setExtractedInfo(data.extractedInfo);
+        setFaces(data.faces);
+        setOcrText(data.ocrText);
+        
+        // Store in localStorage
+        localStorage.setItem('extractedInfo', JSON.stringify(data.extractedInfo));
+        localStorage.setItem('faces', JSON.stringify(data.faces));
+        localStorage.setItem('ocrText', data.ocrText);
+      } else {
+        setUploadStatus('error');
+        console.error('Error:', data.message);
+      }
+    } catch (error) {
+      setUploadStatus('error');
+      console.error('Error uploading file:', error);
     }
   };
 
@@ -267,40 +449,125 @@ const VerificationProcess = () => {
         <TabsContent value="verification">
           <Card>
             <CardHeader>
-              <CardTitle>Eligibility Verification Results</CardTitle>
+              <CardTitle>Document Verification Results</CardTitle>
               <CardDescription>
-                Review the AI verification of your eligibility
+                Review the extracted information from your documents
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {documentData && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">Extracted Information</h3>
+                <>
+                  {/* Personal Information */}
                   <div className="bg-gray-50 p-4 rounded-lg">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-500">Name</p>
-                        <p className="font-medium">{documentData.name}</p>
+                    <h3 className="text-lg font-semibold mb-4">Personal Information</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Full Name</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.['Full Name'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Personal Information']?.['Full Name'] || 'Not available'}
+                        </span>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-500">Aadhaar Number</p>
-                        <p className="font-medium">{documentData.aadhaarNumber}</p>
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Date of Birth</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.['Date of Birth'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Personal Information']?.['Date of Birth'] || 'Not available'}
+                        </span>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-500">Age</p>
-                        <p className="font-medium">{documentData.age} years</p>
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Age</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.Age ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Personal Information']?.Age || 'Not available'}
+                        </span>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-500">Annual Income</p>
-                        <p className="font-medium">₹{documentData.income.toLocaleString()}</p>
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Gender</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.Gender ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Personal Information']?.Gender || 'Not available'}
+                        </span>
                       </div>
-                      <div className="md:col-span-2">
-                        <p className="text-sm text-gray-500">Address</p>
-                        <p className="font-medium">{documentData.address}</p>
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Mobile Number</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.['Mobile Number'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Personal Information']?.['Mobile Number'] || 'Not available'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Father's Name</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.["Father's Name"] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Personal Information']?.["Father's Name"] || 'Not available'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Caste</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Personal Information']?.Caste ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Personal Information']?.Caste || 'Not available'}
+                        </span>
                       </div>
                     </div>
                   </div>
-                </div>
+
+                  {/* Aadhaar Details */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h3 className="text-lg font-semibold mb-4">Aadhaar Details</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Aadhaar Number</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Aadhaar Details']?.['Aadhaar Number'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Aadhaar Details']?.['Aadhaar Number'] || 'Not available'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">VID</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Aadhaar Details']?.VID ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Aadhaar Details']?.VID || 'Not available'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Address</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Aadhaar Details']?.Address ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Aadhaar Details']?.Address || 'Not available'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Issue Date</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Aadhaar Details']?.['Issue Date'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Aadhaar Details']?.['Issue Date'] || 'Not available'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* PAN Details */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h3 className="text-lg font-semibold mb-4">PAN Details</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Permanent Account Number</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['PAN Details']?.['PAN Number'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['PAN Details']?.['PAN Number'] || 'Not available'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Financial Information */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h3 className="text-lg font-semibold mb-4">Financial Information</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-gray-600">Annual Income</span>
+                        <span className={`font-medium ${!documentData.extractedInfo?.['Financial Information']?.['Annual Income'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                          {documentData.extractedInfo?.['Financial Information']?.['Annual Income'] ? (
+                            <span className="flex items-center">
+                              <span className="mr-1">₹</span>
+                              {parseInt(documentData.extractedInfo['Financial Information']['Annual Income']).toLocaleString('en-IN')}
+                            </span>
+                          ) : 'Not available'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
               )}
               
               {eligibilityResult && (
@@ -463,6 +730,101 @@ const VerificationProcess = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {uploadStatus === 'success' && extractedInfo && (
+        <div className="extracted-info">
+          <h3>Extracted Information</h3>
+          
+          {/* Aadhaar Information */}
+          <div className="info-section">
+            <h4>Aadhaar Details</h4>
+            <div className="info-grid">
+              <div className="info-item">
+                <span className="label">Full Name:</span>
+                <span className="value">{extractedInfo['Full Name'] || 'Not found'}</span>
+              </div>
+              <div className="info-item">
+                <span className="label">Date of Birth:</span>
+                <span className="value">{extractedInfo['Date of Birth'] || 'Not found'}</span>
+              </div>
+              <div className="info-item">
+                <span className="label">Aadhaar Number:</span>
+                <span className="value">{extractedInfo['Aadhaar Number'] || 'Not found'}</span>
+              </div>
+              <div className="info-item">
+                <span className="label">VID:</span>
+                <span className="value">{extractedInfo['VID'] || 'Not found'}</span>
+              </div>
+              <div className="info-item">
+                <span className="label">Address:</span>
+                <span className="value">{extractedInfo['Address'] || 'Not found'}</span>
+              </div>
+              <div className="info-item">
+                <span className="label">Issue Date:</span>
+                <span className="value">{extractedInfo['Issue Date'] || 'Not found'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* PAN Information */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h3 className="text-lg font-semibold mb-4">PAN Details</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center border-b pb-2">
+                <span className="text-gray-600">Permanent Account Number</span>
+                <span className={`font-medium ${!documentData.extractedInfo?.PAN?.['PAN Number'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+                  {documentData.extractedInfo?.PAN?.['PAN Number'] || 'Not available'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Ration Card Information */}
+          <div className="info-section">
+            <h4>Ration Card Details</h4>
+            <div className="info-grid">
+              <div className="info-item">
+                <span className="label">Ration Card Number:</span>
+                <span className="value">{extractedInfo['Ration Card Number'] || 'Not found'}</span>
+              </div>
+              <div className="info-item">
+                <span className="label">Caste:</span>
+                <span className="value">{extractedInfo['Caste'] || 'Not found'}</span>
+              </div>
+              <div className="info-item">
+                <span className="label">Annual Income:</span>
+                <span className="value">{extractedInfo['Annual Income'] || 'Not found'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Detected Faces */}
+          {faces.length > 0 && (
+            <div className="faces-section">
+              <h4>Detected Faces</h4>
+              <div className="faces-grid">
+                {faces.map((face, index) => (
+                  <div key={index} className="face-container">
+                    <img 
+                      src={`data:image/jpeg;base64,${face}`} 
+                      alt={`Face ${index + 1}`}
+                      className="face-image"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* OCR Text */}
+          <div className="ocr-section">
+            <h4>OCR Text</h4>
+            <div className="ocr-text">
+              <pre>{ocrText}</pre>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
