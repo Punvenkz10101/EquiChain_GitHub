@@ -1,0 +1,8 @@
+google-genai
+azure-cognitiveservices-vision-computervision
+msrest
+pillow
+opencv-python-headless
+ultralytics
+matplotlib
+python-dotenv
