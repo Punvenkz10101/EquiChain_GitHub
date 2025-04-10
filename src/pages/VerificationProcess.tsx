@@ -47,10 +47,7 @@ const VerificationProcess = () => {
   const scheme = getSchemeById(schemeId);
   
   const [activeTab, setActiveTab] = useState("requirements");
-  const [aadhaarFile, setAadhaarFile] = useState<File | null>(null);
-  const [panFile, setPanFile] = useState<File | null>(null);
-  const [incomeFile, setIncomeFile] = useState<File | null>(null);
-  const [otherFiles, setOtherFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [documentData, setDocumentData] = useState<any>(null);
   const [eligibilityResult, setEligibilityResult] = useState<any>(null);
@@ -78,33 +75,15 @@ const VerificationProcess = () => {
     );
   }
 
-  const handleAadhaarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setAadhaarFile(e.target.files[0]);
-    }
-  };
-
-  const handlePanChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setPanFile(e.target.files[0]);
-    }
-  };
-
-  const handleIncomeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setIncomeFile(e.target.files[0]);
-    }
-  };
-
-  const handleOtherFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setOtherFiles(Array.from(e.target.files));
+      setFiles(Array.from(e.target.files));
     }
   };
 
   const handleProcessDocuments = async () => {
-    if (!aadhaarFile || !panFile || !incomeFile) {
-      toast.error("Please upload all required documents");
+    if (files.length === 0) {
+      toast.error("Please upload at least one document");
       return;
     }
 
@@ -113,11 +92,8 @@ const VerificationProcess = () => {
     setEligibilityResult(null);
     
     try {
-      // Combine all files
-      const allFiles = [aadhaarFile, panFile, incomeFile, ...otherFiles].filter(Boolean);
-      
-      // 1. Extract data from documents using OCR (mock)
-      const extractedData = await extractDataFromDocuments(allFiles);
+      // Extract data from documents using OCR (mock)
+      const extractedData = await extractDataFromDocuments(files);
       setDocumentData(extractedData);
       toast.success("Documents processed successfully");
       
@@ -126,11 +102,11 @@ const VerificationProcess = () => {
         updateUserProfile({ aadhaarNumber: extractedData.aadhaarNumber });
       }
       
-      // 2. Check eligibility based on scheme criteria and extracted data
+      // Check eligibility based on scheme criteria and extracted data
       const result = await checkEligibility(schemeId, extractedData);
       setEligibilityResult(result);
       
-      // 3. Generate token code if eligible
+      // Generate token code if eligible
       if (result.eligible) {
         const code = generateTokenCode();
         setTokenCode(code);
@@ -207,140 +183,55 @@ const VerificationProcess = () => {
                 Review the eligibility criteria and required documents
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Eligibility Criteria</h3>
-                <ul className="list-disc pl-5 space-y-1">
-                  {scheme.eligibility.map((item, index) => (
-                    <li key={index} className="text-gray-700">{item}</li>
-                  ))}
-                </ul>
-              </div>
-              
-              <Separator />
-              
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Required Documents</h3>
-                <ul className="list-disc pl-5 space-y-1">
-                  {scheme.requiredDocuments.map((item, index) => (
-                    <li key={index} className="text-gray-700">{item}</li>
-                  ))}
-                </ul>
-              </div>
-              
-              <Separator />
-              
-              <div>
-                <h3 className="text-lg font-semibold mb-4">Upload Documents</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Please upload clear photos or scans of all required documents.
-                  For the hackathon demo, any image files will work.
-                </p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Aadhaar Card Upload */}
-                  <div className="border-2 border-dashed rounded-lg p-4 hover:bg-gray-50">
-                    <label htmlFor="aadhaar-file" className="cursor-pointer">
-                      <div className="flex flex-col items-center justify-center">
-                        <FileText className="w-10 h-10 mb-3 text-[#007373]" />
-                        <p className="mb-2 text-sm font-medium">Aadhaar Card</p>
-                        <p className="text-xs text-gray-500">
-                          Upload your Aadhaar card (front & back)
-                        </p>
-                        {aadhaarFile && (
-                          <div className="mt-2 flex items-center text-green-500">
-                            <Check className="h-4 w-4 mr-1" />
-                            <span className="text-xs">{aadhaarFile.name}</span>
-                          </div>
-                        )}
+            <CardContent>
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-medium">Required Documents</h3>
+                  <p className="text-sm text-gray-500">
+                    Please upload all the required documents for verification. Supported formats: PDF, JPG, PNG
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="grid w-full items-center gap-4">
+                    <div className="flex flex-col space-y-1.5">
+                      <div className="border-2 border-dashed border-gray-200 rounded-lg p-6">
+                        <div className="flex flex-col items-center">
+                          <Upload className="h-8 w-8 text-gray-400 mb-2" />
+                          <p className="text-sm font-medium mb-1">Upload Documents</p>
+                          <p className="text-xs text-gray-500 mb-4 text-center">
+                            Drag and drop your files here or click to browse
+                          </p>
+                          <input
+                            type="file"
+                            multiple
+                            onChange={handleFileChange}
+                            className="hidden"
+                            id="file-upload"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                          />
+                          <Button
+                            variant="outline"
+                            onClick={() => document.getElementById('file-upload')?.click()}
+                          >
+                            Select Files
+                          </Button>
+                        </div>
                       </div>
-                      <input
-                        id="aadhaar-file"
-                        type="file"
-                        className="hidden"
-                        onChange={handleAadhaarChange}
-                        accept="image/*,.pdf"
-                      />
-                    </label>
-                  </div>
-                  
-                  {/* PAN Card Upload */}
-                  <div className="border-2 border-dashed rounded-lg p-4 hover:bg-gray-50">
-                    <label htmlFor="pan-file" className="cursor-pointer">
-                      <div className="flex flex-col items-center justify-center">
-                        <CreditCard className="w-10 h-10 mb-3 text-[#007373]" />
-                        <p className="mb-2 text-sm font-medium">PAN Card</p>
-                        <p className="text-xs text-gray-500">
-                          Upload your PAN card
-                        </p>
-                        {panFile && (
-                          <div className="mt-2 flex items-center text-green-500">
-                            <Check className="h-4 w-4 mr-1" />
-                            <span className="text-xs">{panFile.name}</span>
-                          </div>
-                        )}
-                      </div>
-                      <input
-                        id="pan-file"
-                        type="file"
-                        className="hidden"
-                        onChange={handlePanChange}
-                        accept="image/*,.pdf"
-                      />
-                    </label>
-                  </div>
-                  
-                  {/* Income Certificate Upload */}
-                  <div className="border-2 border-dashed rounded-lg p-4 hover:bg-gray-50">
-                    <label htmlFor="income-file" className="cursor-pointer">
-                      <div className="flex flex-col items-center justify-center">
-                        <FileSpreadsheet className="w-10 h-10 mb-3 text-[#007373]" />
-                        <p className="mb-2 text-sm font-medium">Income Certificate</p>
-                        <p className="text-xs text-gray-500">
-                          Income proof or certificate
-                        </p>
-                        {incomeFile && (
-                          <div className="mt-2 flex items-center text-green-500">
-                            <Check className="h-4 w-4 mr-1" />
-                            <span className="text-xs">{incomeFile.name}</span>
-                          </div>
-                        )}
-                      </div>
-                      <input
-                        id="income-file"
-                        type="file"
-                        className="hidden"
-                        onChange={handleIncomeChange}
-                        accept="image/*,.pdf"
-                      />
-                    </label>
-                  </div>
-                  
-                  {/* Additional Documents Upload */}
-                  <div className="border-2 border-dashed rounded-lg p-4 hover:bg-gray-50">
-                    <label htmlFor="other-files" className="cursor-pointer">
-                      <div className="flex flex-col items-center justify-center">
-                        <File className="w-10 h-10 mb-3 text-[#007373]" />
-                        <p className="mb-2 text-sm font-medium">Additional Documents</p>
-                        <p className="text-xs text-gray-500">
-                          Any other supporting documents (optional)
-                        </p>
-                        {otherFiles.length > 0 && (
-                          <div className="mt-2 flex items-center text-green-500">
-                            <Check className="h-4 w-4 mr-1" />
-                            <span className="text-xs">{otherFiles.length} files added</span>
-                          </div>
-                        )}
-                      </div>
-                      <input
-                        id="other-files"
-                        type="file"
-                        className="hidden"
-                        multiple
-                        onChange={handleOtherFilesChange}
-                        accept="image/*,.pdf"
-                      />
-                    </label>
+                      {files.length > 0 && (
+                        <div className="mt-4">
+                          <h4 className="text-sm font-medium mb-2">Selected Files:</h4>
+                          <ul className="space-y-2">
+                            {files.map((file, index) => (
+                              <li key={index} className="flex items-center text-sm">
+                                <File className="h-4 w-4 mr-2 text-gray-400" />
+                                {file.name}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -355,7 +246,7 @@ const VerificationProcess = () => {
               <Button 
                 className="bg-[#007373] hover:bg-[#006363]"
                 onClick={handleProcessDocuments}
-                disabled={!aadhaarFile || !panFile || !incomeFile || isProcessing}
+                disabled={files.length === 0 || isProcessing}
               >
                 {isProcessing ? (
                   <>
