@@ -32,7 +32,8 @@ import {
   FileText,
   CreditCard,
   FileSpreadsheet,
-  File
+  File,
+  ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
 import { extractDataFromDocuments, checkEligibility, generateTokenCode } from "@/data/mockAiService";
@@ -54,6 +55,12 @@ const VerificationProcess = () => {
   const [tokenCode, setTokenCode] = useState<string | null>(null);
   const [isRecordingOnBlockchain, setIsRecordingOnBlockchain] = useState(false);
   const [blockchainRecorded, setBlockchainRecorded] = useState(false);
+  const [transactionDetails, setTransactionDetails] = useState<{
+    txHash: string;
+    blockNumber: number;
+    costEth: string;
+    originalMessage: string;
+  } | null>(null);
 
   if (!scheme) {
     return (
@@ -131,7 +138,45 @@ const VerificationProcess = () => {
     setIsRecordingOnBlockchain(true);
     
     try {
-      // Record the claim on the blockchain
+      // Prepare verification message
+      const verificationMessage = JSON.stringify({
+        userHash: user?.id || "unknown",
+        userName: user?.name || "Unknown User",
+        scheme: scheme.title,
+        tokenCode,
+        isEligible: true,
+        documentData: {
+          aadhaarNumber: documentData.aadhaarNumber,
+          name: documentData.name,
+          age: documentData.age,
+          income: documentData.income
+        }
+      });
+
+      // Send transaction to blockchain
+      const response = await fetch('http://localhost:3000/api/send-message', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: verificationMessage })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to send transaction to blockchain');
+      }
+
+      const result = await response.json();
+      
+      // Store transaction details
+      setTransactionDetails({
+        txHash: result.txHash,
+        blockNumber: result.blockNumber,
+        costEth: result.costEth,
+        originalMessage: result.originalMessage
+      });
+      
+      // Record the claim locally
       await addClaim({
         userHash: user?.id || "unknown",
         userName: user?.name || "Unknown User",
@@ -446,6 +491,37 @@ const VerificationProcess = () => {
                     Copy Token
                   </Button>
                 </div>
+                
+                {transactionDetails && (
+                  <div className="mt-6 text-left">
+                    <h3 className="text-sm font-medium mb-3">Transaction Details</h3>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-sm text-gray-500">Transaction Hash</p>
+                        <div className="flex items-center">
+                          <p className="font-mono text-sm truncate mr-2">{transactionDetails.txHash}</p>
+                          <a 
+                            href={`https://sepolia.etherscan.io/tx/${transactionDetails.txHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#007373] hover:text-[#006363]"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500">Block Number</p>
+                        <p className="font-mono text-sm">{transactionDetails.blockNumber}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500">Transaction Cost</p>
+                        <p className="font-mono text-sm">{transactionDetails.costEth} ETH</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="mt-4 text-sm text-gray-500">
                   <p>Keep this token safe. You may need to present it when claiming your benefits.</p>
                   <p className="mt-1">You can verify this token anytime using the public verification page.</p>
