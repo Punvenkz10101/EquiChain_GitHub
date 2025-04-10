@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useBlockchain } from "@/context/BlockchainContext";
 import { getSchemeById } from "@/data/schemes";
+import { Check as CheckIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
@@ -104,6 +105,7 @@ const VerificationProcess = () => {
     hash: string;
     timestamp: string;
   } | null>(null);
+  const [faces, setFaces] = useState<string[]>([]);
 
   if (!scheme) {
     return (
@@ -342,6 +344,29 @@ const VerificationProcess = () => {
       console.error('Error uploading file:', error);
     }
   };
+
+  const fetchFaceImages = async (faceFiles: string[]) => {
+    try {
+      const images = await Promise.all(
+        faceFiles.map(async (filename) => {
+          const response = await fetch(`http://localhost:5000/api/faces/${filename}`);
+          if (!response.ok) throw new Error('Failed to fetch face image');
+          const blob = await response.blob();
+          return URL.createObjectURL(blob);
+        })
+      );
+      setFaces(images);
+    } catch (error) {
+      console.error('Error fetching face images:', error);
+      toast.error('Failed to load face images');
+    }
+  };
+
+  useEffect(() => {
+    if (documentData?.faces?.length > 0) {
+      fetchFaceImages(documentData.faces);
+    }
+  }, [documentData?.faces]);
 
   return (
     <div className="container max-w-6xl mx-auto py-8">
@@ -740,97 +765,21 @@ const VerificationProcess = () => {
         </TabsContent>
       </Tabs>
 
-      {uploadStatus === 'success' && extractedInfo && (
-        <div className="extracted-info">
-          <h3>Extracted Information</h3>
-          
-          {/* Aadhaar Information */}
-          <div className="info-section">
-            <h4>Aadhaar Details</h4>
-            <div className="info-grid">
-              <div className="info-item">
-                <span className="label">Full Name:</span>
-                <span className="value">{extractedInfo['Full Name'] || 'Not found'}</span>
+      {uploadStatus === 'success' && faces.length > 0 && (
+        <div className="p-6 bg-white rounded-lg shadow-sm">
+          <div className="flex flex-wrap gap-4 justify-center">
+            {faces.map((faceUrl, index) => (
+              <div key={index} className="relative">
+                <img 
+                  src={faceUrl}
+                  alt={`Face ${index + 1}`}
+                  className="w-24 h-24 rounded-lg object-cover border-2 border-[#007373]"
+                />
+                <div className="absolute -top-2 -right-2 bg-[#007373] rounded-full w-6 h-6 flex items-center justify-center">
+                  <CheckIcon className="w-4 h-4 text-white" />
+                </div>
               </div>
-              <div className="info-item">
-                <span className="label">Date of Birth:</span>
-                <span className="value">{extractedInfo['Date of Birth'] || 'Not found'}</span>
-              </div>
-              <div className="info-item">
-                <span className="label">Aadhaar Number:</span>
-                <span className="value">{extractedInfo['Aadhaar Number'] || 'Not found'}</span>
-              </div>
-              <div className="info-item">
-                <span className="label">VID:</span>
-                <span className="value">{extractedInfo['VID'] || 'Not found'}</span>
-              </div>
-              <div className="info-item">
-                <span className="label">Address:</span>
-                <span className="value">{extractedInfo['Address'] || 'Not found'}</span>
-              </div>
-              <div className="info-item">
-                <span className="label">Issue Date:</span>
-                <span className="value">{extractedInfo['Issue Date'] || 'Not found'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* PAN Information */}
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="text-lg font-semibold mb-4">PAN Details</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center border-b pb-2">
-                <span className="text-gray-600">Permanent Account Number</span>
-                <span className={`font-medium ${!documentData.extractedInfo?.PAN?.['PAN Number'] ? 'text-gray-400 italic' : 'text-gray-800'}`}>
-                  {documentData.extractedInfo?.PAN?.['PAN Number'] || 'Not available'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Ration Card Information */}
-          <div className="info-section">
-            <h4>Ration Card Details</h4>
-            <div className="info-grid">
-              <div className="info-item">
-                <span className="label">Ration Card Number:</span>
-                <span className="value">{extractedInfo['Ration Card Number'] || 'Not found'}</span>
-              </div>
-              <div className="info-item">
-                <span className="label">Caste:</span>
-                <span className="value">{extractedInfo['Caste'] || 'Not found'}</span>
-              </div>
-              <div className="info-item">
-                <span className="label">Annual Income:</span>
-                <span className="value">{extractedInfo['Annual Income'] || 'Not found'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Detected Faces */}
-          {faces.length > 0 && (
-            <div className="faces-section">
-              <h4>Detected Faces</h4>
-              <div className="faces-grid">
-                {faces.map((face, index) => (
-                  <div key={index} className="face-container">
-                    <img 
-                      src={`data:image/jpeg;base64,${face}`} 
-                      alt={`Face ${index + 1}`}
-                      className="face-image"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* OCR Text */}
-          <div className="ocr-section">
-            <h4>OCR Text</h4>
-            <div className="ocr-text">
-              <pre>{ocrText}</pre>
-            </div>
+            ))}
           </div>
         </div>
       )}

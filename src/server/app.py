@@ -1,6 +1,6 @@
 import os
 import time
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from pymongo import MongoClient
@@ -392,6 +392,25 @@ def get_user_faces(user_id):
         return jsonify(faces)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/faces/<filename>')
+def get_face_image(filename):
+    try:
+        # Ensure the filename is safe
+        if '..' in filename or filename.startswith('/'):
+            return jsonify({'error': 'Invalid filename'}), 400
+            
+        # Get the face image path
+        face_path = os.path.join(app.config['UPLOAD_FOLDER'], 'faces', filename)
+        
+        # Check if file exists
+        if not os.path.exists(face_path):
+            return jsonify({'error': 'Face image not found'}), 404
+            
+        return send_file(face_path, mimetype='image/jpeg')
+    except Exception as e:
+        print(f"Error serving face image: {str(e)}")
+        return jsonify({'error': 'Failed to serve face image'}), 500
 
 if __name__ == '__main__':
     print("Starting server...")
