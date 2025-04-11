@@ -806,6 +806,14 @@ const VerificationProcess = () => {
 
             {/* Add eligibility summary at the bottom */}
             {eligibilityResult && renderEligibilitySummary(eligibilityResult)}
+
+            {/* Show token only when recording to blockchain */}
+            {isRecordingOnBlockchain && tokenCode && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600">Recording verification with token:</p>
+                <p className="font-mono text-lg">{tokenCode}</p>
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -892,25 +900,25 @@ const VerificationProcess = () => {
                     </p>
                   </div>
 
-                  {/* Token Display (if eligible) */}
-                  {eligibilityResult?.eligible && tokenCode && (
+                  {/* Blockchain Transaction */}
+                  {transactionDetails && (
                     <div className="mt-4 pt-4 border-t border-gray-200">
                       <div className="flex items-center gap-2 mb-2">
                         <CheckIcon className="h-5 w-5 text-green-500" />
-                        <h4 className="font-medium text-gray-900">Verification Token</h4>
+                        <h4 className="font-medium text-gray-900">Blockchain Transaction</h4>
                       </div>
-                      <div className="flex items-center justify-center gap-2 bg-white p-3 rounded-md">
-                        <code className="text-lg font-mono font-semibold">{tokenCode}</code>
-                        <button 
-                          onClick={copyTokenToClipboard}
-                          className="text-gray-500 hover:text-gray-700 transition-colors"
-                        >
-                          <Clipboard className="h-4 w-4" />
-                        </button>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Transaction Hash:</span>
+                          <code className="bg-gray-100 px-2 py-1 rounded text-sm">
+                            {transactionDetails.hash}
+                          </code>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Timestamp:</span>
+                          <span className="text-sm">{transactionDetails.timestamp}</span>
+                        </div>
                       </div>
-                      <p className="text-xs text-gray-500 text-center mt-2">
-                        This token will be recorded on the blockchain for verification
-                      </p>
                     </div>
                   )}
                 </div>
