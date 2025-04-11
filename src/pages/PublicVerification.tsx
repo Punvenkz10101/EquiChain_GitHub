@@ -86,7 +86,7 @@ const PublicVerification = () => {
                     className="flex-1 font-mono"
                   />
                   <Button 
-                    className="bg-sahyog-teal hover:bg-blue-600"
+                    className="bg-blue-600 hover:bg-blue-500"
                     onClick={() => handleVerify()}
                   >
                     <Search className="mr-2 h-4 w-4" />
