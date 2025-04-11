@@ -33,7 +33,7 @@ import {
   FileText,
   CreditCard,
   FileSpreadsheet,
-  File
+  File,
 } from "lucide-react";
 import { toast } from "sonner";
 import { extractDataFromDocuments, checkEligibility, generateTokenCode, verifyExtractedData, type VerificationResults } from "@/data/mockAiService";
@@ -78,6 +78,13 @@ interface EligibilityResult {
   eligible: boolean;
   reason: string;
   fraud_score: number;
+  criteria_results?: {
+    criterion: string;
+    satisfied: boolean;
+    actual_value?: string | number;
+    required_value?: string | number;
+  }[];
+  token_code?: string;
 }
 
 type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
@@ -88,10 +95,10 @@ const VerificationProcess = () => {
   const { user: clerkUser, isLoaded } = useUser();
   const { user, updateUserProfile } = useAuth();
   const { isConnected, addClaim } = useBlockchain();
-  
+
   const { schemeId, schemeTitle } = location.state || {};
   const scheme = getSchemeById(schemeId);
-  
+
   const [activeTab, setActiveTab] = useState("requirements");
   const [files, setFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -115,7 +122,7 @@ const VerificationProcess = () => {
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Invalid Scheme</AlertTitle>
           <AlertDescription>
-            The scheme you are trying to access does not exist.
+            The selected scheme is not valid or no longer available. Please return to the dashboard and select a valid scheme.
           </AlertDescription>
         </Alert>
         <Button 
@@ -234,10 +241,21 @@ const VerificationProcess = () => {
       const result = await checkEligibility(schemeId, data.extractedInfo);
       setEligibilityResult(result);
       
-      // Generate token code if eligible
-      if (result.eligible) {
-        const code = generateTokenCode();
-        setTokenCode(code);
+      if (!result.eligible) {
+        toast.error(result.reason);
+        if (result.criteria_results) {
+          result.criteria_results.forEach(criterion => {
+            if (!criterion.satisfied) {
+              toast.error(`Failed criterion: ${criterion.criterion} (Required: ${criterion.required_value}, Actual: ${criterion.actual_value})`);
+            }
+          });
+        }
+      } else {
+        toast.success("All eligibility criteria met!");
+        // Set token code from the result if available
+        if (result.token_code) {
+          setTokenCode(result.token_code);
+        }
       }
       
       // Move to next tab
@@ -421,6 +439,36 @@ const VerificationProcess = () => {
     </div>
   );
 
+  const renderExtractedInfo = (extractedInfo: ExtractedInfo) => {
+    const sections = [
+      { title: 'Personal Information', key: 'Personal Information' },
+      { title: 'Aadhaar Details', key: 'Aadhaar Details' },
+      { title: 'PAN Details', key: 'PAN Details' },
+      { title: 'Financial Information', key: 'Financial Information' }
+    ];
+
+    return (
+      <div className="bg-gray-50 p-4 rounded-lg">
+        <h3 className="text-lg font-semibold mb-4">Extracted Information</h3>
+        <div className="space-y-4">
+          {sections.map(section => (
+            <div key={section.key} className="border-b pb-4 last:border-b-0">
+              <h4 className="font-medium text-gray-700 mb-2">{section.title}</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(extractedInfo[section.key] || {}).map(([key, value]) => (
+                  <div key={key} className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">{key}:</span>
+                    <span className="text-sm font-medium">{value || 'N/A'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="container max-w-6xl mx-auto py-8">
       <div className="mb-6">
@@ -434,8 +482,7 @@ const VerificationProcess = () => {
           <TabsTrigger value="verification" disabled={!documentData}>Verification</TabsTrigger>
           <TabsTrigger value="complete" disabled={!blockchainRecorded}>Completion</TabsTrigger>
         </TabsList>
-        
-        {/* Tab 1: Requirements */}
+
         <TabsContent value="requirements">
           <Card>
             <CardHeader>
@@ -523,196 +570,220 @@ const VerificationProcess = () => {
             </CardFooter>
           </Card>
         </TabsContent>
-        
-        {/* Tab 2: Verification */}
+
         <TabsContent value="verification">
-          <Card>
-            <CardHeader>
-              <CardTitle>Document Verification Results</CardTitle>
-              <CardDescription>
-                Verification status for each field from your documents
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
               {verificationResults ? (
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-lg font-medium mb-4">Personal Information</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex justify-between items-center">
-                        <span>Full Name</span>
-                        {renderVerificationStatus(
-                          verificationResults.personalInfo.fullName.isMatch,
-                          verificationResults.personalInfo.fullName.expectedValue,
-                          verificationResults.personalInfo.fullName.extractedValue
-                        )}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Document Verification Results</CardTitle>
+                    <CardDescription>
+                      Verification status for each field from your documents
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-6">
+                      <div>
+                        <h3 className="text-lg font-medium mb-4">Personal Information</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="flex justify-between items-center">
+                            <span>Full Name</span>
+                            {renderVerificationStatus(
+                              verificationResults.personalInfo.fullName.isMatch,
+                              verificationResults.personalInfo.fullName.expectedValue,
+                              verificationResults.personalInfo.fullName.extractedValue
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span>Date of Birth</span>
+                            {renderVerificationStatus(
+                              verificationResults.personalInfo.dateOfBirth.isMatch,
+                              verificationResults.personalInfo.dateOfBirth.expectedValue,
+                              verificationResults.personalInfo.dateOfBirth.extractedValue
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span>Age</span>
+                            {renderVerificationStatus(
+                              verificationResults.personalInfo.age.isMatch,
+                              verificationResults.personalInfo.age.expectedValue,
+                              verificationResults.personalInfo.age.extractedValue
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span>Gender</span>
+                            {renderVerificationStatus(
+                              verificationResults.personalInfo.gender.isMatch,
+                              verificationResults.personalInfo.gender.expectedValue,
+                              verificationResults.personalInfo.gender.extractedValue
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span>Mobile Number</span>
+                            {renderVerificationStatus(
+                              verificationResults.personalInfo.mobileNumber.isMatch,
+                              verificationResults.personalInfo.mobileNumber.expectedValue,
+                              verificationResults.personalInfo.mobileNumber.extractedValue
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span>Father's Name</span>
+                            {renderVerificationStatus(
+                              verificationResults.personalInfo.fatherName.isMatch,
+                              verificationResults.personalInfo.fatherName.expectedValue,
+                              verificationResults.personalInfo.fatherName.extractedValue
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span>Caste</span>
+                            {renderVerificationStatus(
+                              verificationResults.personalInfo.caste.isMatch,
+                              verificationResults.personalInfo.caste.expectedValue,
+                              verificationResults.personalInfo.caste.extractedValue
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span>Date of Birth</span>
-                        {renderVerificationStatus(
-                          verificationResults.personalInfo.dateOfBirth.isMatch,
-                          verificationResults.personalInfo.dateOfBirth.expectedValue,
-                          verificationResults.personalInfo.dateOfBirth.extractedValue
-                        )}
+
+                      <Separator />
+
+                      <div>
+                        <h3 className="text-lg font-medium mb-4">Aadhaar Details</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="flex justify-between items-center">
+                            <span>Aadhaar Number</span>
+                            {renderVerificationStatus(
+                              verificationResults.aadhaarDetails.aadhaarNumber.isMatch,
+                              verificationResults.aadhaarDetails.aadhaarNumber.expectedValue,
+                              verificationResults.aadhaarDetails.aadhaarNumber.extractedValue
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span>VID</span>
+                            {renderVerificationStatus(
+                              verificationResults.aadhaarDetails.vid.isMatch,
+                              verificationResults.aadhaarDetails.vid.expectedValue,
+                              verificationResults.aadhaarDetails.vid.extractedValue
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span>Address</span>
+                            {renderVerificationStatus(
+                              verificationResults.aadhaarDetails.address.isMatch,
+                              verificationResults.aadhaarDetails.address.expectedValue,
+                              verificationResults.aadhaarDetails.address.extractedValue
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span>Issue Date</span>
+                            {renderVerificationStatus(
+                              verificationResults.aadhaarDetails.issueDate.isMatch,
+                              verificationResults.aadhaarDetails.issueDate.expectedValue,
+                              verificationResults.aadhaarDetails.issueDate.extractedValue
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span>Age</span>
-                        {renderVerificationStatus(
-                          verificationResults.personalInfo.age.isMatch,
-                          verificationResults.personalInfo.age.expectedValue,
-                          verificationResults.personalInfo.age.extractedValue
-                        )}
+
+                      <Separator />
+
+                      <div>
+                        <h3 className="text-lg font-medium mb-4">PAN Details</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="flex justify-between items-center">
+                            <span>PAN Number</span>
+                            {renderVerificationStatus(
+                              verificationResults.panDetails.panNumber.isMatch,
+                              verificationResults.panDetails.panNumber.expectedValue,
+                              verificationResults.panDetails.panNumber.extractedValue
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span>Gender</span>
-                        {renderVerificationStatus(
-                          verificationResults.personalInfo.gender.isMatch,
-                          verificationResults.personalInfo.gender.expectedValue,
-                          verificationResults.personalInfo.gender.extractedValue
-                        )}
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span>Mobile Number</span>
-                        {renderVerificationStatus(
-                          verificationResults.personalInfo.mobileNumber.isMatch,
-                          verificationResults.personalInfo.mobileNumber.expectedValue,
-                          verificationResults.personalInfo.mobileNumber.extractedValue
-                        )}
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span>Father's Name</span>
-                        {renderVerificationStatus(
-                          verificationResults.personalInfo.fatherName.isMatch,
-                          verificationResults.personalInfo.fatherName.expectedValue,
-                          verificationResults.personalInfo.fatherName.extractedValue
-                        )}
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span>Caste</span>
-                        {renderVerificationStatus(
-                          verificationResults.personalInfo.caste.isMatch,
-                          verificationResults.personalInfo.caste.expectedValue,
-                          verificationResults.personalInfo.caste.extractedValue
-                        )}
+
+                      <Separator />
+
+                      <div>
+                        <h3 className="text-lg font-medium mb-4">Financial Information</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="flex justify-between items-center">
+                            <span>Annual Income</span>
+                            {renderVerificationStatus(
+                              verificationResults.financialInfo.annualIncome.isMatch,
+                              verificationResults.financialInfo.annualIncome.expectedValue,
+                              verificationResults.financialInfo.annualIncome.extractedValue
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-
-                  <Separator />
-
-                  <div>
-                    <h3 className="text-lg font-medium mb-4">Aadhaar Details</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex justify-between items-center">
-                        <span>Aadhaar Number</span>
-                        {renderVerificationStatus(
-                          verificationResults.aadhaarDetails.aadhaarNumber.isMatch,
-                          verificationResults.aadhaarDetails.aadhaarNumber.expectedValue,
-                          verificationResults.aadhaarDetails.aadhaarNumber.extractedValue
+                  </CardContent>
+                  <CardFooter className="flex justify-between">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setActiveTab("requirements")}
+                    >
+                      Back
+                    </Button>
+                    {eligibilityResult?.eligible && tokenCode ? (
+                      <Button 
+                        className="bg-[#007373] hover:bg-[#006363]"
+                        onClick={handleRecordOnBlockchain}
+                        disabled={isRecordingOnBlockchain}
+                      >
+                        {isRecordingOnBlockchain ? (
+                          <>
+                            <div className="loading-spinner mr-2"></div>
+                            Recording on Blockchain...
+                          </>
+                        ) : (
+                          <>
+                            Record on Blockchain <ArrowRight className="ml-2 h-4 w-4" />
+                          </>
                         )}
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span>VID</span>
-                        {renderVerificationStatus(
-                          verificationResults.aadhaarDetails.vid.isMatch,
-                          verificationResults.aadhaarDetails.vid.expectedValue,
-                          verificationResults.aadhaarDetails.vid.extractedValue
-                        )}
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span>Address</span>
-                        {renderVerificationStatus(
-                          verificationResults.aadhaarDetails.address.isMatch,
-                          verificationResults.aadhaarDetails.address.expectedValue,
-                          verificationResults.aadhaarDetails.address.extractedValue
-                        )}
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span>Issue Date</span>
-                        {renderVerificationStatus(
-                          verificationResults.aadhaarDetails.issueDate.isMatch,
-                          verificationResults.aadhaarDetails.issueDate.expectedValue,
-                          verificationResults.aadhaarDetails.issueDate.extractedValue
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div>
-                    <h3 className="text-lg font-medium mb-4">PAN Details</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex justify-between items-center">
-                        <span>PAN Number</span>
-                        {renderVerificationStatus(
-                          verificationResults.panDetails.panNumber.isMatch,
-                          verificationResults.panDetails.panNumber.expectedValue,
-                          verificationResults.panDetails.panNumber.extractedValue
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div>
-                    <h3 className="text-lg font-medium mb-4">Financial Information</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex justify-between items-center">
-                        <span>Annual Income</span>
-                        {renderVerificationStatus(
-                          verificationResults.financialInfo.annualIncome.isMatch,
-                          verificationResults.financialInfo.annualIncome.expectedValue,
-                          verificationResults.financialInfo.annualIncome.extractedValue
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                      </Button>
+                    ) : (
+                      <Button 
+                        onClick={() => navigate("/dashboard")}
+                        variant="secondary"
+                      >
+                        Return to Dashboard
+                      </Button>
+                    )}
+                  </CardFooter>
+                </Card>
               ) : (
                 <div className="text-center py-8">
                   <p className="text-gray-500">No verification results available</p>
                 </div>
               )}
-            </CardContent>
-            <CardFooter className="flex justify-between">
-              <Button 
-                variant="outline" 
-                onClick={() => setActiveTab("requirements")}
-              >
-                Back
-              </Button>
-              {eligibilityResult?.eligible && tokenCode ? (
-                <Button 
-                  className="bg-[#007373] hover:bg-[#006363]"
-                  onClick={handleRecordOnBlockchain}
-                  disabled={isRecordingOnBlockchain}
-                >
-                  {isRecordingOnBlockchain ? (
-                    <>
-                      <div className="loading-spinner mr-2"></div>
-                      Recording on Blockchain...
-                    </>
-                  ) : (
-                    <>
-                      Record on Blockchain <ArrowRight className="ml-2 h-4 w-4" />
-                    </>
-                  )}
-                </Button>
-              ) : (
-                <Button 
-                  onClick={() => navigate("/dashboard")}
-                  variant="secondary"
-                >
-                  Return to Dashboard
-                </Button>
+            </div>
+            
+            <div>
+              {documentData?.extractedInfo && renderExtractedInfo(documentData.extractedInfo)}
+              
+              {/* Display faces if available */}
+              {faces.length > 0 && (
+                <div className="mt-6 bg-gray-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4">Detected Faces</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    {faces.map((face, index) => (
+                      <div key={index} className="relative aspect-square">
+                        <img
+                          src={face}
+                          alt={`Detected face ${index + 1}`}
+                          className="rounded-lg object-cover w-full h-full"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
-            </CardFooter>
-          </Card>
+            </div>
+          </div>
         </TabsContent>
-        
-        {/* Tab 3: Completion */}
+
         <TabsContent value="complete">
           <Card>
             <CardHeader>
