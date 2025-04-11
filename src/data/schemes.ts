@@ -1,4 +1,3 @@
-
 import { UserCheck, BadgeIndianRupee, ChevronsUp, UserIcon } from "lucide-react";
 import { LucideIcon } from "lucide-react";
 
@@ -34,9 +33,8 @@ export const schemes: Scheme[] = [
     title: "National Food Security Scheme",
     description: "Subsidized food grains for low-income families to ensure access to essential nutrition.",
     eligibility: [
-      "Annual household income less than ₹2,50,000",
-      "Not owning a 4-wheeler vehicle",
-      "Not paying income tax"
+      "Annual household income less than ₹5,00,000",
+      "Not owning a 4-wheeler vehicle"
     ],
     requiredDocuments: [
       "Aadhaar Card",

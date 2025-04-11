@@ -4,6 +4,13 @@ interface EligibilityResult {
   eligible: boolean;
   fraud_score: number;
   reason: string;
+  criteria_results?: {
+    criterion: string;
+    satisfied: boolean;
+    actual_value?: string | number;
+    required_value?: string | number;
+  }[];
+  token_code?: string;
 }
 
 interface DocumentData {
@@ -139,6 +146,21 @@ const verifiedIndividuals = [
   }
 ];
 
+const schemes = [
+  {
+    id: "old-age-pension",
+    name: "Old Age Pension Scheme"
+  },
+  {
+    id: "food-subsidy",
+    name: "Food Subsidy Scheme"
+  },
+  {
+    id: "education-scholarship",
+    name: "Education Scholarship Scheme"
+  }
+];
+
 /**
  * Mock function to extract data from uploaded documents using OCR
  */
@@ -207,12 +229,111 @@ export const checkEligibility = async (schemeId: string, extractedInfo: any): Pr
   const matchScore = calculateMatchScore(extractedInfo, verifiedIndividual);
   const fraudScore = 100 - matchScore;
   
+  if (fraudScore >= 30) {
+    return {
+      eligible: false,
+      reason: "Possible fraudulent application. Information mismatch detected.",
+      fraud_score: fraudScore
+    };
+  }
+
+  // Get scheme details
+  const scheme = schemes.find(s => s.id === schemeId);
+  if (!scheme) {
+    return {
+      eligible: false,
+      reason: "Invalid scheme ID",
+      fraud_score: fraudScore
+    };
+  }
+
+  // Check scheme-specific criteria
+  const criteriaResults = [];
+  let allCriteriaSatisfied = true;
+  let failedCriterion = "";
+
+  switch (schemeId) {
+    case "old-age-pension":
+      // Check age
+      const ageResult = {
+        criterion: "Age 60 years or above",
+        satisfied: verifiedIndividual.personalInfo.age >= 60,
+        actual_value: verifiedIndividual.personalInfo.age,
+        required_value: 60
+      };
+      criteriaResults.push(ageResult);
+      
+      // Check income
+      const pensionIncomeResult = {
+        criterion: "Annual income less than ₹1,00,000",
+        satisfied: verifiedIndividual.financialInfo.annualIncome < 100000,
+        actual_value: verifiedIndividual.financialInfo.annualIncome,
+        required_value: 100000
+      };
+      criteriaResults.push(pensionIncomeResult);
+
+      allCriteriaSatisfied = ageResult.satisfied && pensionIncomeResult.satisfied;
+      if (!ageResult.satisfied) failedCriterion = "age requirement";
+      if (!pensionIncomeResult.satisfied) failedCriterion = "income limit";
+      break;
+
+    case "food-subsidy":
+      // Check income
+      const foodIncomeResult = {
+        criterion: "Annual household income less than ₹5,00,000",
+        satisfied: verifiedIndividual.financialInfo.annualIncome < 500000,
+        actual_value: verifiedIndividual.financialInfo.annualIncome,
+        required_value: 500000
+      };
+      criteriaResults.push(foodIncomeResult);
+
+      allCriteriaSatisfied = foodIncomeResult.satisfied;
+      if (!foodIncomeResult.satisfied) failedCriterion = "income limit";
+      break;
+
+    case "education-scholarship":
+      // Check age for student (assuming eligible age is between 16-25)
+      const studentAgeResult = {
+        criterion: "Age between 16-25 years",
+        satisfied: verifiedIndividual.personalInfo.age >= 16 && verifiedIndividual.personalInfo.age <= 25,
+        actual_value: verifiedIndividual.personalInfo.age,
+        required_value: "16-25"
+      };
+      criteriaResults.push(studentAgeResult);
+
+      // Check income
+      const scholarshipIncomeResult = {
+        criterion: "Annual family income less than ₹3,00,000",
+        satisfied: verifiedIndividual.financialInfo.annualIncome < 300000,
+        actual_value: verifiedIndividual.financialInfo.annualIncome,
+        required_value: 300000
+      };
+      criteriaResults.push(scholarshipIncomeResult);
+
+      allCriteriaSatisfied = studentAgeResult.satisfied && scholarshipIncomeResult.satisfied;
+      if (!studentAgeResult.satisfied) failedCriterion = "age requirement";
+      if (!scholarshipIncomeResult.satisfied) failedCriterion = "income limit";
+      break;
+  }
+
+  if (!allCriteriaSatisfied) {
+    return {
+      eligible: false,
+      reason: `Not eligible due to ${failedCriterion}`,
+      fraud_score: fraudScore,
+      criteria_results: criteriaResults
+    };
+  }
+
+  // Generate token code for eligible applicants
+  const tokenCode = generateTokenCode();
+
   return {
-    eligible: fraudScore < 30,
-    reason: fraudScore < 30 
-      ? "Identity verified successfully. All documents match our records." 
-      : "Possible fraudulent application. Information mismatch detected.",
-    fraud_score: fraudScore
+    eligible: true,
+    reason: "All eligibility criteria satisfied",
+    fraud_score: fraudScore,
+    criteria_results: criteriaResults,
+    token_code: tokenCode
   };
 };
 

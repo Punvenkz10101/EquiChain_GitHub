@@ -14,6 +14,8 @@ import cv2
 import json
 from datetime import datetime
 from bson import ObjectId
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 # Load environment variables
 load_dotenv()
@@ -25,12 +27,14 @@ CORS(app)
 UPLOAD_FOLDER = 'uploads'
 FACES_FOLDER = 'faces'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf'}
+MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB limit
 
 # Create necessary directories
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(FACES_FOLDER, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
 # Initialize MongoDB client
 mongo_client = MongoClient(os.getenv('MONGODB_URI'))
@@ -48,6 +52,30 @@ model = genai.GenerativeModel('gemini-2.0-flash')
 
 # Initialize YOLO
 yolo_model = YOLO("yolov8n.pt")
+
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["5 per minute"],
+    storage_uri="memory://"
+)
+
+# Error handlers
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({
+        'error': 'File too large',
+        'message': 'The file size exceeds the limit of 16MB'
+    }), 413
+
+@app.errorhandler(429)
+def ratelimit_handler(error):
+    return jsonify({
+        'error': 'Rate limit exceeded',
+        'message': 'Too many requests. Please try again later.',
+        'retry_after': error.description
+    }), 429
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -208,6 +236,7 @@ def extract_info_with_gemini(ocr_text):
         return {}
 
 @app.route('/api/upload', methods=['POST'])
+@limiter.limit("5 per minute")
 def upload_file():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
