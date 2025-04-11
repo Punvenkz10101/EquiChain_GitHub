@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useBlockchain } from "@/context/BlockchainContext";
 import { getSchemeById } from "@/data/schemes";
-import { Check as CheckIcon, X as XIcon } from "lucide-react";
+import { Check as CheckIcon, X as XIcon, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
@@ -296,9 +296,10 @@ const VerificationProcess = () => {
         isEligible: true
       });
       
+      // Set transaction details with the blockchain hash
       setTransactionDetails({
-        hash: result.transactionHash || 'Unknown',
-        timestamp: new Date().toISOString()
+        hash: result.blockchainHash, // Use blockchainHash from the result
+        timestamp: result.timestamp
       });
       
       setBlockchainRecorded(true);
@@ -910,9 +911,19 @@ const VerificationProcess = () => {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-600">Transaction Hash:</span>
-                          <code className="bg-gray-100 px-2 py-1 rounded text-sm">
-                            {transactionDetails.hash}
-                          </code>
+                          <div className="flex items-center">
+                            <p className="font-mono text-sm truncate mr-2 max-w-[200px]">
+                              {transactionDetails.hash}
+                            </p>
+                            <a 
+                              href={`https://sepolia.etherscan.io/tx/${transactionDetails.hash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[#007373] hover:text-[#006363]"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-600">Timestamp:</span>

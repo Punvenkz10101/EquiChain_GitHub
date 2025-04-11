@@ -1,5 +1,5 @@
-
 import { createContext, useState, useContext, ReactNode, useEffect } from "react";
+import { ethers } from "ethers";
 
 interface Claim {
   id: string;
@@ -23,6 +23,13 @@ interface BlockchainContextType {
 
 const BlockchainContext = createContext<BlockchainContextType | undefined>(undefined);
 
+// Initialize ethers provider and wallet
+const ALCHEMY_URL = "https://eth-sepolia.g.alchemy.com/v2/8dxqRQ2iuA67wiIYfyx-TYZMBWREYiV0";
+const PRIVATE_KEY = "0x03fdb1ddeec7c4075abdedbdb6e31bfe3cb6de16249423d28915d92c8e1b0802";
+
+const provider = new ethers.JsonRpcProvider(ALCHEMY_URL);
+const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+
 export const BlockchainProvider = ({ children }: { children: ReactNode }) => {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -35,18 +42,28 @@ export const BlockchainProvider = ({ children }: { children: ReactNode }) => {
       setClaims(JSON.parse(storedClaims));
     }
     
-    // Mock blockchain connection status
-    const mockConnection = localStorage.getItem("sahyogBlockchainConnected");
-    setIsConnected(mockConnection === "true");
+    // Check blockchain connection
+    checkConnection();
   }, []);
+
+  const checkConnection = async () => {
+    try {
+      const network = await provider.getNetwork();
+      setIsConnected(true);
+      console.log("Connected to network:", network.name);
+    } catch (error) {
+      console.error("Blockchain connection error:", error);
+      setIsConnected(false);
+    }
+  };
 
   const connectWallet = async () => {
     setIsLoading(true);
     try {
-      // Simulate blockchain wallet connection
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      setIsConnected(true);
-      localStorage.setItem("sahyogBlockchainConnected", "true");
+      await checkConnection();
+      if (!isConnected) {
+        throw new Error("Failed to connect to blockchain network");
+      }
     } catch (error) {
       console.error("Blockchain connection error:", error);
       throw new Error("Failed to connect to blockchain. Please try again.");
@@ -58,19 +75,54 @@ export const BlockchainProvider = ({ children }: { children: ReactNode }) => {
   const addClaim = async (claimData: Omit<Claim, "id" | "blockchainHash" | "timestamp">) => {
     setIsLoading(true);
     try {
-      // Simulate blockchain transaction
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Generate mock blockchain hash
-      const blockchainHash = "0x" + Array(40).fill(0).map(() => 
-        Math.floor(Math.random() * 16).toString(16)).join('');
-      
+      // Create claim data to be stored
+      const claimDataToStore = {
+        userHash: claimData.userHash,
+        scheme: claimData.scheme,
+        tokenCode: claimData.tokenCode,
+        timestamp: new Date().toISOString()
+      };
+
+      console.log("Creating claim with data:", claimDataToStore);
+
+      // Create a transaction to store the claim hash on the blockchain
+      const claimHash = ethers.keccak256(
+        ethers.toUtf8Bytes(JSON.stringify(claimDataToStore))
+      );
+
+      console.log("Generated claim hash:", claimHash);
+
+      // Prepare transaction
+      const transaction = {
+        to: wallet.address, // Send to self as a marker transaction
+        value: ethers.parseEther("0"), // 0 ETH value
+        data: claimHash, // Store claim hash in transaction data
+        gasLimit: 100000 // Set explicit gas limit
+      };
+
+      console.log("Sending transaction:", transaction);
+
+      // Send transaction
+      const tx = await wallet.sendTransaction(transaction);
+      console.log("Transaction sent:", tx.hash);
+
+      // Wait for transaction confirmation
+      console.log("Waiting for transaction confirmation...");
+      const receipt = await tx.wait();
+      console.log("Transaction confirmed:", receipt);
+
+      if (!tx.hash) {
+        throw new Error("Transaction hash is missing");
+      }
+
       const newClaim: Claim = {
         id: "claim_" + Math.random().toString(36).substring(2, 9),
-        blockchainHash,
+        blockchainHash: tx.hash, // Use tx.hash instead of receipt.hash
         timestamp: new Date().toISOString(),
         ...claimData
       };
+
+      console.log("Created new claim:", newClaim);
       
       setClaims(prevClaims => {
         const updatedClaims = [...prevClaims, newClaim];
@@ -80,7 +132,10 @@ export const BlockchainProvider = ({ children }: { children: ReactNode }) => {
       
       return newClaim;
     } catch (error) {
-      console.error("Blockchain transaction error:", error);
+      console.error("Detailed blockchain transaction error:", error);
+      if (error instanceof Error) {
+        throw new Error(`Failed to record claim on blockchain: ${error.message}`);
+      }
       throw new Error("Failed to record claim on blockchain. Please try again.");
     } finally {
       setIsLoading(false);
