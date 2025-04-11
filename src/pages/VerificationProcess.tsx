@@ -297,7 +297,7 @@ const VerificationProcess = () => {
       });
       
       setTransactionDetails({
-        hash: result.transactionHash || 'Unknown',
+        hash: result.userHash || 'Unknown',
         timestamp: new Date().toISOString()
       });
       
