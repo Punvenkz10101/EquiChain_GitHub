@@ -22,21 +22,21 @@ const Navbar = () => {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <Link to="/" className="flex items-center">
-              <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center">
-                <span className="text-[#007373] font-bold text-xl">EC</span>
+              <div className="h-12 w-12 bg-white rounded-full flex items-center justify-center">
+                <span className="text-[#007373] font-bold text-2xl">EC</span>
               </div>
-              <span className="ml-2 text-xl font-bold">EquiChain</span>
+              <span className="ml-3 text-2xl font-bold">EquiChain</span>
             </Link>
             
-            <div className="hidden md:flex ml-10 space-x-8">
-              <Link to="/" className="hover:text-gray-200 px-3 py-2 rounded-md text-sm font-medium">
+            <div className="hidden md:flex ml-12 space-x-8">
+              <Link to="/" className="hover:text-gray-200 px-3 py-2 rounded-md text-base font-medium">
                 Home
               </Link>
-              <Link to="/public-verification" className="hover:text-gray-200 px-3 py-2 rounded-md text-sm font-medium">
+              <Link to="/public-verification" className="hover:text-gray-200 px-3 py-2 rounded-md text-base font-medium">
                 Public Verification
               </Link>
               <SignedIn>
-                <Link to="/dashboard" className="hover:text-gray-200 px-3 py-2 rounded-md text-sm font-medium">
+                <Link to="/dashboard" className="hover:text-gray-200 px-3 py-2 rounded-md text-base font-medium">
                   Dashboard
                 </Link>
               </SignedIn>
@@ -45,14 +45,22 @@ const Navbar = () => {
           
           <div className="flex items-center space-x-4">
             <SignedIn>
-              <UserButton afterSignOutUrl="/" />
+              <UserButton 
+                afterSignOutUrl="/" 
+                appearance={{
+                  elements: {
+                    avatarBox: "h-12 w-12",
+                    userButtonAvatarBox: "h-12 w-12"
+                  }
+                }}
+              />
             </SignedIn>
             <SignedOut>
               <div className="hidden md:flex space-x-4">
-                <Button asChild variant="outline" className="text-[#007373] border-white hover:bg-gray-100">
+                <Button asChild variant="outline" className="text-[#007373] border-white hover:bg-gray-100 text-base px-6 py-2">
                   <Link to="/sign-in">Login</Link>
                 </Button>
-                <Button asChild className="bg-white text-[#007373] hover:bg-gray-100">
+                <Button asChild className="bg-white text-[#007373] hover:bg-gray-100 text-base px-6 py-2">
                   <Link to="/sign-up">Register</Link>
                 </Button>
               </div>

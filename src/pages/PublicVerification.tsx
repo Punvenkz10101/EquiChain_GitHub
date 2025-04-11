@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useBlockchain } from "@/context/BlockchainContext";
@@ -86,7 +85,7 @@ const PublicVerification = () => {
                     className="flex-1 font-mono"
                   />
                   <Button 
-                    className="bg-blue-600 hover:bg-blue-500"
+                    className="bg-[#003333] hover:bg-[#004444]"
                     onClick={() => handleVerify()}
                   >
                     <Search className="mr-2 h-4 w-4" />
