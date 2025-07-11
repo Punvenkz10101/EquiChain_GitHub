@@ -22,21 +22,6 @@
 
 ---
 
-## 📋 Table of Contents
-
-- [🎥 Demo Video](#-demo-video)
-- [✨ Features](#-features)
-- [🛠️ Technology Stack](#️-technology-stack)
-- [📦 Installation](#-installation)
-- [🏃‍♂️ Quick Start](#️-quick-start)
-- [📁 Project Structure](#-project-structure)
-- [🔧 Configuration](#-configuration)
-- [🚀 Deployment](#-deployment)
-- [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
-- [🙏 Acknowledgments](#-acknowledgments)
-- [📞 Support](#-support)
-
 ## 🎥 Demo Video
 
 <div align="center">
@@ -276,29 +261,6 @@ npm run build
 - **🎨 shadcn/ui** for beautiful UI components
 - **⚡ Vite** for lightning-fast development
 
-## 📞 Support
-
-<div align="center">
-
-**Need help? We're here to assist you! 🤝**
-
-</div>
-
-### 📧 Get Support
-
-- 🐛 **Bug Reports**: Create an issue in the GitHub repository
-- 💡 **Feature Requests**: Submit your ideas through GitHub issues
-- 📚 **Documentation**: Check our comprehensive guides
-- 🎥 **Tutorials**: Watch the demo video for usage examples
-
-### 🔗 Useful Links
-
-- 📖 [Documentation](https://github.com/your-repo/docs)
-- 🐛 [Issue Tracker](https://github.com/your-repo/issues)
-- 💬 [Discussions](https://github.com/your-repo/discussions)
-- 📧 [Contact Team](mailto:support@equichain.com)
-
----
 
 <div align="center">
 
