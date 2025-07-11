@@ -2,7 +2,6 @@
 
 <div align="center">
 
-![EquiChain Logo](https://img.shields.io/badge/EquiChain-Platform-blue?style=for-the-badge&logo=blockchain)
 [![Demo Video](https://img.shields.io/badge/🎥-Watch_Demo-red?style=for-the-badge&logo=youtube)](https://drive.google.com/file/d/1gEFAl9BvDBSo0df8nMobA0yazXbRtpCR/view?usp=drive_link)
 [![React](https://img.shields.io/badge/React-18.3.1-blue?style=for-the-badge&logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5.3-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
@@ -267,9 +266,5 @@ npm run build
 **🔗 EquiChain** - Revolutionizing welfare distribution with AI and blockchain technology.
 
 *Built with ❤️ for a more transparent and efficient future*
-
-[![GitHub Stars](https://img.shields.io/github/stars/your-repo/equichain?style=social)](https://github.com/your-repo/equichain)
-[![GitHub Forks](https://img.shields.io/github/forks/your-repo/equichain?style=social)](https://github.com/your-repo/equichain)
-[![GitHub Issues](https://img.shields.io/github/issues/your-repo/equichain)](https://github.com/your-repo/equichain/issues)
 
 </div>
